@@ -313,6 +313,19 @@ fn embed_image(path: String) -> Result<String> {
 }
 
 #[tauri::command]
+fn get_setting(key: String, state: State<'_, AppState>) -> Result<Option<String>> {
+    let connection = state.db.lock().map_err(|_| "Notebook is busy".to_string())?;
+    connection.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| row.get(0)).optional().map_err(error)
+}
+
+#[tauri::command]
+fn set_setting(key: String, value: String, state: State<'_, AppState>) -> Result<()> {
+    let connection = state.db.lock().map_err(|_| "Notebook is busy".to_string())?;
+    connection.execute("INSERT INTO settings(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![key, value]).map_err(error)?;
+    Ok(())
+}
+
+#[tauri::command]
 fn export_notebook(destination: String, state: State<'_, AppState>) -> Result<()> {
     let connection = state.db.lock().map_err(|_| "Notebook is busy".to_string())?;
     let mut statement = connection.prepare("SELECT n.id, n.title, n.body, n.category_id, c.name, n.created_at, n.updated_at, n.deleted_at, n.revision_id FROM notes n LEFT JOIN categories c ON c.id = n.category_id WHERE n.deleted_at IS NULL ORDER BY c.position, n.updated_at DESC").map_err(error)?;
@@ -341,7 +354,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             initialize_database, list_categories, create_category, list_notes, get_note, save_note, move_note,
-            trash_note, restore_note, delete_note_permanently, empty_trash, duplicate_note, export_notebook, embed_image
+            trash_note, restore_note, delete_note_permanently, empty_trash, duplicate_note, export_notebook, embed_image,
+            get_setting, set_setting
         ])
         .run(tauri::generate_context!())
         .expect("error while running Papyrus");

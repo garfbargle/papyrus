@@ -5,6 +5,7 @@ import { plainPreview } from "./format";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 const storageKey = "papyrus-browser-notebook-v1";
+const preferencesKey = "papyrus-browser-preferences-v1";
 type BrowserStore = { notes: Note[]; categories: Category[] };
 
 function now() { return new Date().toISOString(); }
@@ -14,6 +15,9 @@ function readBrowserStore(): BrowserStore {
   try { return JSON.parse(raw) as BrowserStore; } catch { return { notes: [], categories: [] }; }
 }
 function writeBrowserStore(store: BrowserStore) { localStorage.setItem(storageKey, JSON.stringify(store)); }
+function readPreferences(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(preferencesKey) || "{}") as Record<string, string>; } catch { return {}; }
+}
 function item(note: Note, categories: Category[]): NoteListItem {
   const category = categories.find((candidate) => candidate.id === note.categoryId);
   const { body: _body, ...listItem } = note;
@@ -98,5 +102,14 @@ export const api = {
   async embedImage(path: string): Promise<string> {
     if (!isTauri) throw new Error("Choose an image from the installed Papyrus app.");
     return invoke<string>("embed_image", { path });
+  },
+  async getSetting(key: string): Promise<string | null> {
+    if (isTauri) return invoke<string | null>("get_setting", { key });
+    return readPreferences()[key] || null;
+  },
+  async setSetting(key: string, value: string): Promise<void> {
+    if (isTauri) return invoke<void>("set_setting", { key, value });
+    const preferences = readPreferences(); preferences[key] = value;
+    localStorage.setItem(preferencesKey, JSON.stringify(preferences));
   },
 };

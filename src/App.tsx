@@ -12,6 +12,16 @@ import type { Category, Note, NoteListItem } from "./types";
 type ActivePlace = "all" | "trash" | "settings" | string;
 type Display = "write" | "preview" | "split";
 type MobileScreen = "categories" | "notes" | "note";
+type ThemeId = "mist" | "graphite" | "nord" | "solarized" | "dracula" | "gruvbox";
+
+const themes: { id: ThemeId; name: string; description: string; colors: [string, string, string] }[] = [
+  { id: "mist", name: "Mist", description: "Cool grey and white", colors: ["#f6f7f9", "#eef1f5", "#5d6a7d"] },
+  { id: "graphite", name: "Graphite", description: "Near-black night mode", colors: ["#191a1d", "#22242a", "#c7d0de"] },
+  { id: "nord", name: "Nord", description: "Calm blue-grey", colors: ["#eceff4", "#e5e9f0", "#5e81ac"] },
+  { id: "solarized", name: "Solarized", description: "Warm, low contrast", colors: ["#fdf6e3", "#eee8d5", "#268bd2"] },
+  { id: "dracula", name: "Dracula", description: "Classic violet dark", colors: ["#282a36", "#343746", "#bd93f9"] },
+  { id: "gruvbox", name: "Gruvbox", description: "Soft amber dark", colors: ["#282828", "#3c3836", "#fabd2f"] },
+];
 
 const freshNote = (): Note => ({
   id: newId(), title: "", body: "", categoryId: null,
@@ -32,6 +42,7 @@ function App() {
   const [overflow, setOverflow] = useState(false);
   const [moveMenu, setMoveMenu] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeId>("mist");
   const editor = useRef<EditorView | null>(null);
   const pendingSave = useRef<number | null>(null);
   const currentRef = useRef<Note | null>(null);
@@ -53,8 +64,9 @@ function App() {
     (async () => {
       try {
         await api.initialize();
-        const [loadedCategories, loadedNotes] = await Promise.all([api.listCategories(), api.listNotes("all")]);
+        const [loadedCategories, loadedNotes, savedTheme] = await Promise.all([api.listCategories(), api.listNotes("all"), api.getSetting("theme")]);
         setCategories(loadedCategories); setNotes(loadedNotes);
+        if (themes.some((item) => item.id === savedTheme)) setTheme(savedTheme as ThemeId);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Papyrus could not open the notebook.");
       } finally { setLoading(false); }
@@ -68,6 +80,8 @@ function App() {
   }, [activePlace, search, loading, loadNotes]);
 
   useEffect(() => () => { if (pendingSave.current) window.clearTimeout(pendingSave.current); }, []);
+
+  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
@@ -176,6 +190,11 @@ function App() {
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not export notebook."); }
   };
 
+  const changeTheme = (nextTheme: ThemeId) => {
+    setTheme(nextTheme);
+    void api.setSetting("theme", nextTheme).catch(() => setNotice("Could not save that theme preference."));
+  };
+
   const applyFormat = (kind: "heading" | "bold" | "link" | "checklist" | "code") => {
     const view = editor.current; if (!view) return;
     const range = view.state.selection.main; const selection = view.state.sliceDoc(range.from, range.to);
@@ -247,7 +266,7 @@ function App() {
       </section>
 
       <section className="note-pane">
-        {activePlace === "settings" ? <Settings onExport={exportNotebook} /> : current ? <>
+        {activePlace === "settings" ? <Settings onExport={exportNotebook} theme={theme} onThemeChange={changeTheme} /> : current ? <>
           <header className="note-header">
             <button className="mobile-back icon-button" onClick={() => setMobileScreen("notes")} aria-label="Back to notes"><Icon name="arrowLeft" /></button>
             <div className="note-breadcrumb"><Icon name={currentCategory ? "folder" : "file"} size={15} /><span>{currentCategory?.name || "Uncategorized"}</span></div>
@@ -283,8 +302,8 @@ function EmptyNote({ onCreate, activePlace }: { onCreate: () => void; activePlac
   return <div className="empty-note"><span className="paper-glyph">✦</span><h2>A quiet place for every thought.</h2><p>Notes are private, stored locally, and written in ordinary Markdown.</p><button className="primary-button" onClick={onCreate}><Icon name="plus" size={17} />New note</button></div>;
 }
 
-function Settings({ onExport }: { onExport: () => void }) {
-  return <div className="settings"><header><span className="eyebrow">Notebook</span><h1>Settings</h1><p>Your notes live on this device and are always yours to take with you.</p></header><section><div><strong>Export your notebook</strong><span>Create a ZIP of readable Markdown files, organized by category.</span></div><button className="secondary-button" onClick={onExport}><Icon name="archive" size={17} />Export Markdown</button></section><section><div><strong>Private by default</strong><span>No account, server, or tracking is needed to write and organize your notes.</span></div><span className="status-pill"><i />Stored locally</span></section><section><div><strong>Appearance</strong><span>Papyrus follows your system light or dark appearance.</span></div><Icon name="sun" /></section></div>;
+function Settings({ onExport, theme, onThemeChange }: { onExport: () => void; theme: ThemeId; onThemeChange: (theme: ThemeId) => void }) {
+  return <div className="settings"><header><span className="eyebrow">Notebook</span><h1>Settings</h1><p>Your notes live on this device and are always yours to take with you.</p></header><section className="theme-section"><div><strong>Editor appearance</strong><span>Choose a comfortable colour palette for writing.</span></div><div className="theme-grid" role="group" aria-label="Editor appearance">{themes.map((option) => <button className={theme === option.id ? "theme-card selected" : "theme-card"} key={option.id} onClick={() => onThemeChange(option.id)} aria-pressed={theme === option.id}><span className="theme-preview" style={{ background: option.colors[0] }}><i style={{ background: option.colors[1] }} /><b style={{ background: option.colors[2] }} /></span><span><strong>{option.name}</strong><small>{option.description}</small></span>{theme === option.id && <Icon name="check" size={15} />}</button>)}</div></section><section><div><strong>Export your notebook</strong><span>Create a ZIP of readable Markdown files, organized by category.</span></div><button className="secondary-button" onClick={onExport}><Icon name="archive" size={17} />Export Markdown</button></section><section><div><strong>Private by default</strong><span>No account, server, or tracking is needed to write and organize your notes.</span></div><span className="status-pill"><i />Stored locally</span></section></div>;
 }
 
 export default App;
