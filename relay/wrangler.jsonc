@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "papyrus-sync-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-11",
+  "d1_databases": [
+    {
+      "binding": "SYNC_DB",
+      "database_name": "papyrus-sync-relay",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "SYNC_PACKAGES",
+      "bucket_name": "papyrus-sync-packages"
+    }
+  ],
+  "triggers": { "crons": ["17 3 * * *"] },
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
+}

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Category, Note, NoteListItem, SavePayload } from "../types";
+import type { Category, Note, NoteConflict, NoteListItem, PairingOffer, PairingProgress, SavePayload, SyncStatus } from "../types";
 import { newId } from "./ids";
 import { previewFromMarkdown, titleFromMarkdown } from "./format";
 
@@ -29,6 +29,7 @@ function noteWithCategory(note: Note, categories: Category[]): Note {
 }
 
 export const api = {
+  isNativeApp() { return isTauri; },
   async initialize() {
     if (isTauri) return invoke<void>("initialize_database");
   },
@@ -41,6 +42,21 @@ export const api = {
     const store = readBrowserStore(); const timestamp = now();
     const category = { id: newId(), name: name.trim(), position: store.categories.length, createdAt: timestamp, updatedAt: timestamp };
     store.categories.push(category); writeBrowserStore(store); return category;
+  },
+  async renameCategory(id: string, name: string): Promise<Category> {
+    if (isTauri) return invoke<Category>("rename_category", { id, name });
+    const store = readBrowserStore(); const category = store.categories.find((candidate) => candidate.id === id);
+    if (!category) throw new Error("Folder not found"); category.name = name.trim(); category.updatedAt = now(); writeBrowserStore(store); return category;
+  },
+  async moveCategory(id: string, direction: -1 | 1): Promise<Category[]> {
+    if (isTauri) return invoke<Category[]>("move_category", { id, direction });
+    const store = readBrowserStore(); const ordered = store.categories.sort((a, b) => a.position - b.position); const index = ordered.findIndex((candidate) => candidate.id === id); const target = index + direction;
+    if (index >= 0 && target >= 0 && target < ordered.length) { [ordered[index].position, ordered[target].position] = [ordered[target].position, ordered[index].position]; writeBrowserStore(store); }
+    return ordered.sort((a, b) => a.position - b.position);
+  },
+  async deleteCategory(id: string): Promise<void> {
+    if (isTauri) return invoke<void>("delete_category", { id });
+    const store = readBrowserStore(); store.categories = store.categories.filter((candidate) => candidate.id !== id); for (const note of store.notes) if (note.categoryId === id) note.categoryId = null; writeBrowserStore(store);
   },
   async listNotes(filter: "all" | "trash" | string = "all", search = ""): Promise<NoteListItem[]> {
     if (isTauri) return invoke<NoteListItem[]>("list_notes", { filter, search });
@@ -56,6 +72,14 @@ export const api = {
     if (isTauri) return invoke<Note | null>("get_note", { id });
     const store = readBrowserStore(); const note = store.notes.find((candidate) => candidate.id === id);
     return note ? noteWithCategory(note, store.categories) : null;
+  },
+  async getNoteConflict(id: string): Promise<NoteConflict | null> {
+    if (isTauri) return invoke<NoteConflict | null>("get_note_conflict", { id });
+    return null;
+  },
+  async resolveNoteConflict(id: string, resolution: "current" | "other" | "both"): Promise<Note> {
+    if (isTauri) return invoke<Note>("resolve_note_conflict", { id, resolution });
+    throw new Error("Sync conflict review is available in the installed Papyrus app.");
   },
   async saveNote(payload: SavePayload): Promise<Note> {
     if (isTauri) return invoke<Note>("save_note", { note: payload });
@@ -112,5 +136,37 @@ export const api = {
     if (isTauri) return invoke<void>("set_setting", { key, value });
     const preferences = readPreferences(); preferences[key] = value;
     localStorage.setItem(preferencesKey, JSON.stringify(preferences));
+  },
+  async getSyncStatus(): Promise<SyncStatus> {
+    if (isTauri) return invoke<SyncStatus>("get_sync_status");
+    return { status: "Offline", lastSuccessfulSync: null, pendingOutgoingChanges: 0, devices: [], localDeviceName: "This browser", attentionMessage: "Install Papyrus to use encrypted device sync.", openConflicts: 0 };
+  },
+  async syncNow(): Promise<SyncStatus> {
+    if (isTauri) return invoke<SyncStatus>("sync_now");
+    return this.getSyncStatus();
+  },
+  async renameSyncDevice(name: string): Promise<SyncStatus> {
+    if (isTauri) return invoke<SyncStatus>("rename_sync_device", { name });
+    throw new Error("Device sync is available in the installed Papyrus app.");
+  },
+  async removeSyncDevice(deviceId: string): Promise<SyncStatus> {
+    if (isTauri) return invoke<SyncStatus>("remove_sync_device", { deviceId });
+    throw new Error("Device sync is available in the installed Papyrus app.");
+  },
+  async startPairing(): Promise<PairingOffer> {
+    if (isTauri) return invoke<PairingOffer>("start_pairing");
+    throw new Error("Device pairing is available in the installed Papyrus app.");
+  },
+  async acceptPairing(code: string): Promise<PairingProgress> {
+    if (isTauri) return invoke<PairingProgress>("accept_pairing", { code });
+    throw new Error("Device pairing is available in the installed Papyrus app.");
+  },
+  async completePairing(code: string): Promise<PairingProgress> {
+    if (isTauri) return invoke<PairingProgress>("complete_pairing", { code });
+    throw new Error("Device pairing is available in the installed Papyrus app.");
+  },
+  async finishPairing(code: string): Promise<PairingProgress> {
+    if (isTauri) return invoke<PairingProgress>("finish_pairing", { code });
+    throw new Error("Device pairing is available in the installed Papyrus app.");
   },
 };

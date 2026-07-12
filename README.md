@@ -11,12 +11,23 @@ Papyrus is a quiet, local-first Markdown notebook built with Tauri 2, React, Cod
 - Markdown headings, lists, links, code, tables, blockquotes, and inline image previews
 - Inline image insertion for PNG, JPEG, GIF, and WebP (up to 4 MB); images live directly in the Markdown as portable data URLs
 - Complete-notebook ZIP export, arranged by category with readable Markdown and YAML metadata
+- End-to-end encrypted device sync with one-time QR pairing, immutable revisions, durable retry queues, tombstones, device revocation, and explicit conflict review
+- A touch-first mobile Settings and Sync flow, including QR camera scanning and safe folder management
 
 ## Run it
 
 ```sh
 npm install
 npm run tauri dev
+```
+
+For local sync development, start the relay in another terminal:
+
+```sh
+cd relay
+npm install
+npx wrangler d1 migrations apply papyrus-sync-relay --local
+npm run dev
 ```
 
 To package a native macOS app:
@@ -29,6 +40,6 @@ The resulting app is written to `src-tauri/target/release/bundle/macos/Papyrus.a
 
 ## Privacy and scope
 
-No account or remote service is involved: the live notebook is a SQLite database in the application data directory, and Markdown export is always available.
+Every device keeps a complete SQLite notebook and editing never waits for the network. Sync packages are authenticated and encrypted on-device; the relay sees only opaque routing identifiers, ciphertext, acknowledgements, and expiry times. Markdown export remains available even when sync is never enabled.
 
-Encrypted device pairing and relay synchronization are deliberately not presented as complete; the database already records immutable revisions and deletion tombstones so that sync can be added without replacing the local notebook model. Native PDF rendering, file import, and continuing note-sharing are the next portability milestones.
+See [`relay/README.md`](relay/README.md) for local failure simulation, testing, and deployment.

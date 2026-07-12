@@ -2730,6 +2730,8 @@ dependencies = [
  "chacha20poly1305",
  "chrono",
  "ed25519-dalek",
+ "flate2",
+ "hkdf",
  "keyring",
  "keyring-core",
  "rand_core 0.6.4",
