@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Category, Note, NoteListItem, SavePayload } from "../types";
 import { newId } from "./ids";
-import { plainPreview } from "./format";
+import { previewFromMarkdown, titleFromMarkdown } from "./format";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 const storageKey = "papyrus-browser-notebook-v1";
@@ -21,7 +21,7 @@ function readPreferences(): Record<string, string> {
 function item(note: Note, categories: Category[]): NoteListItem {
   const category = categories.find((candidate) => candidate.id === note.categoryId);
   const { body: _body, ...listItem } = note;
-  return { ...listItem, categoryName: category?.name ?? null, preview: plainPreview(note.body) };
+  return { ...listItem, title: titleFromMarkdown(note.body) || note.title, categoryName: category?.name ?? null, preview: previewFromMarkdown(note.body) };
 }
 function noteWithCategory(note: Note, categories: Category[]): Note {
   const category = categories.find((candidate) => candidate.id === note.categoryId);
@@ -60,8 +60,9 @@ export const api = {
   async saveNote(payload: SavePayload): Promise<Note> {
     if (isTauri) return invoke<Note>("save_note", { note: payload });
     const store = readBrowserStore(); const timestamp = now(); const old = store.notes.find((candidate) => candidate.id === payload.id);
+    const title = titleFromMarkdown(payload.body) || payload.title;
     const next: Note = {
-      id: payload.id, title: payload.title, body: payload.body, categoryId: payload.categoryId,
+      id: payload.id, title, body: payload.body, categoryId: payload.categoryId,
       createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp, deletedAt: old?.deletedAt ?? null, revisionId: newId(),
     };
     if (old) Object.assign(old, next); else store.notes.push(next);

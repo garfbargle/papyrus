@@ -6,9 +6,9 @@ Papyrus is a quiet, local-first Markdown notebook built with Tauri 2, React, Cod
 
 - Three-pane desktop notebook; focused Categories → Notes → Note navigation on phones
 - Local SQLite storage, migrations, full-text search, recency sorting, categories, and 30-day Trash
-- Markdown-native CodeMirror editor with autosave, keyboard undo/redo and find, plus Write, Preview, and desktop Split modes
-- Interactive Preview checklists that update ordinary `- [ ]` / `- [x]` Markdown
-- Markdown headings, lists, links, code, tables, blockquotes, inline image previews, and a compact formatting aid
+- Paper-first Markdown editor with direct formatting, autosave, keyboard undo/redo and find. Markdown stays canonical, with a raw-source escape hatch when you want it.
+- Familiar Markdown shortcuts such as `## Heading` and `- [ ] Task`, plus a right-click menu for headings, lists, checklists, links, code, and images
+- Markdown headings, lists, links, code, tables, blockquotes, and inline image previews
 - Inline image insertion for PNG, JPEG, GIF, and WebP (up to 4 MB); images live directly in the Markdown as portable data URLs
 - Complete-notebook ZIP export, arranged by category with readable Markdown and YAML metadata
 

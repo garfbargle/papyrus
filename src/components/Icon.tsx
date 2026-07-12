@@ -16,6 +16,8 @@ type Name =
   | "menu"
   | "more"
   | "paperclip"
+  | "panelLeft"
+  | "panelRight"
   | "pen"
   | "plus"
   | "search"
@@ -42,6 +44,8 @@ const paths: Record<Name, string | string[]> = {
   menu: "M4 7h16M4 12h16M4 17h16",
   more: "M12 5v.01M12 12v.01M12 19v.01",
   paperclip: "m9 17 7.5-7.5a3 3 0 1 0-4.2-4.2L5.1 12.5a4.5 4.5 0 1 0 6.4 6.4l7.1-7.1",
+  panelLeft: "M4 5h16v14H4zM10 5v14M7 9v1m0 4v1",
+  panelRight: "M4 5h16v14H4zM14 5v14M17 9v1m0 4v1",
   pen: "m14 5 5 5M4 20l4.3-1 10.9-10.9a2.1 2.1 0 0 0-3-3L5.3 16ZM13 6l5 5",
   plus: "M12 5v14M5 12h14",
   search: "m20 20-4.5-4.5m2.5-5a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z",

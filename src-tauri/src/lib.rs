@@ -56,7 +56,6 @@ struct NoteListItem {
 #[serde(rename_all = "camelCase")]
 struct NoteInput {
     id: String,
-    title: String,
     body: String,
     category_id: Option<String>,
 }
@@ -124,8 +123,28 @@ fn note_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Note> {
     })
 }
 
+fn markdown_title(body: &str) -> String {
+    let Some(line) = body.lines().find(|line| !line.trim().is_empty()) else { return String::new(); };
+    let mut text = line.trim();
+    text = text.trim_start_matches('#').trim_start();
+    text = text.strip_prefix('>').unwrap_or(text).trim_start();
+    for marker in ["- ", "* ", "+ "] {
+        if let Some(rest) = text.strip_prefix(marker) { text = rest; break; }
+    }
+    if let Some((prefix, rest)) = text.split_once(". ") {
+        if !prefix.is_empty() && prefix.chars().all(|character| character.is_ascii_digit()) { text = rest; }
+    }
+    text = text.strip_prefix("[ ] ").or_else(|| text.strip_prefix("[x] ")).or_else(|| text.strip_prefix("[X] ")).unwrap_or(text);
+    text.replace(['#', '*', '`', '>', '|', '_', '~'], "").split_whitespace().collect::<Vec<_>>().join(" ").chars().take(120).collect()
+}
+
 fn compact_preview(body: &str) -> String {
+    let mut skipped_title = false;
     body.lines()
+        .filter(|line| {
+            if !skipped_title && !line.trim().is_empty() { skipped_title = true; return false; }
+            skipped_title
+        })
         .filter(|line| !line.trim_start().starts_with("```"))
         .map(|line| line.replace("- [ ]", "").replace("- [x]", "").replace("- [X]", ""))
         .collect::<Vec<_>>().join(" ")
@@ -209,7 +228,7 @@ fn list_notes(filter: String, search: String, state: State<'_, AppState>) -> Res
     else { clauses.push("n.deleted_at IS NULL"); if filter != "all" { clauses.push(if query.is_empty() { "n.category_id = ?1" } else { "n.category_id = ?2" }); } }
     sql.push_str(" WHERE "); sql.push_str(&clauses.join(" AND ")); sql.push_str(" ORDER BY n.updated_at DESC");
     let mut statement = connection.prepare(&sql).map_err(error)?;
-    let read = |row: &rusqlite::Row<'_>| -> rusqlite::Result<NoteListItem> { let body: String = row.get(2)?; Ok(NoteListItem { id: row.get(0)?, title: row.get(1)?, preview: compact_preview(&body), category_id: row.get(3)?, category_name: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)?, deleted_at: row.get(7)?, revision_id: row.get(8)? }) };
+    let read = |row: &rusqlite::Row<'_>| -> rusqlite::Result<NoteListItem> { let body: String = row.get(2)?; let stored_title: String = row.get(1)?; let derived_title = markdown_title(&body); Ok(NoteListItem { id: row.get(0)?, title: if derived_title.is_empty() { stored_title } else { derived_title }, preview: compact_preview(&body), category_id: row.get(3)?, category_name: row.get(4)?, created_at: row.get(5)?, updated_at: row.get(6)?, deleted_at: row.get(7)?, revision_id: row.get(8)? }) };
     let rows = if query.is_empty() && filter != "all" && filter != "trash" { statement.query_map([filter], read) } else if !query.is_empty() && filter != "all" && filter != "trash" { statement.query_map(params![query, filter], read) } else if !query.is_empty() { statement.query_map([query], read) } else { statement.query_map([], read) }.map_err(error)?;
     rows.collect::<std::result::Result<Vec<_>, _>>().map_err(error)
 }
@@ -225,7 +244,8 @@ fn save_note(note: NoteInput, state: State<'_, AppState>) -> Result<Note> {
     let connection = state.db.lock().map_err(|_| "Notebook is busy".to_string())?;
     let previous = find_note(&connection, &note.id)?;
     let timestamp = now(); let revision_id = make_id();
-    let saved = Note { id: note.id, title: note.title, body: note.body, category_id: note.category_id, category_name: None, created_at: previous.as_ref().map(|item| item.created_at.clone()).unwrap_or_else(|| timestamp.clone()), updated_at: timestamp, deleted_at: previous.as_ref().and_then(|item| item.deleted_at.clone()), revision_id };
+    let title = markdown_title(&note.body);
+    let saved = Note { id: note.id, title, body: note.body, category_id: note.category_id, category_name: None, created_at: previous.as_ref().map(|item| item.created_at.clone()).unwrap_or_else(|| timestamp.clone()), updated_at: timestamp, deleted_at: previous.as_ref().and_then(|item| item.deleted_at.clone()), revision_id };
     if previous.is_some() {
         connection.execute("UPDATE notes SET title = ?2, body = ?3, category_id = ?4, updated_at = ?5, revision_id = ?6 WHERE id = ?1", params![saved.id, saved.title, saved.body, saved.category_id, saved.updated_at, saved.revision_id]).map_err(error)?;
     } else {
@@ -286,7 +306,7 @@ fn empty_trash(state: State<'_, AppState>) -> Result<()> {
 fn duplicate_note(id: String, state: State<'_, AppState>) -> Result<Note> {
     let connection = state.db.lock().map_err(|_| "Notebook is busy".to_string())?;
     let source = find_note(&connection, &id)?.ok_or_else(|| "Note not found.".to_string())?;
-    let timestamp = now(); let copy = Note { id: make_id(), title: if source.title.trim().is_empty() { "Untitled note copy".into() } else { format!("{} copy", source.title) }, body: source.body, category_id: source.category_id, category_name: None, created_at: timestamp.clone(), updated_at: timestamp, deleted_at: None, revision_id: make_id() };
+    let timestamp = now(); let copy = Note { id: make_id(), title: markdown_title(&source.body), body: source.body, category_id: source.category_id, category_name: None, created_at: timestamp.clone(), updated_at: timestamp, deleted_at: None, revision_id: make_id() };
     connection.execute("INSERT INTO notes(id, title, body, category_id, created_at, updated_at, deleted_at, revision_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)", params![copy.id, copy.title, copy.body, copy.category_id, copy.created_at, copy.updated_at, copy.revision_id]).map_err(error)?;
     record_revision(&connection, &copy, None)?; reindex_note(&connection, &copy.id)?;
     find_note(&connection, &copy.id)?.ok_or_else(|| "Duplicate could not be loaded.".to_string())

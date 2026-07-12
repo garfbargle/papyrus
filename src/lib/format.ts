@@ -17,6 +17,35 @@ export function plainPreview(markdown: string) {
     .trim();
 }
 
+export function titleFromMarkdown(markdown: string) {
+  const firstLine = markdown
+    .replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "")
+    .split(/\r?\n/)
+    .find((line) => line.trim());
+
+  if (!firstLine) return "";
+
+  return firstLine
+    .trim()
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^>\s?/, "")
+    .replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "")
+    .replace(/^\[[ xX]\]\s+/, "")
+    .replace(/!?(?:\[([^\]]*)\])\([^)]*\)/g, "$1")
+    .replace(/(`+)(.*?)\1/g, "$2")
+    .replace(/(\*{1,3}|_{1,3}|~~)(.*?)\1/g, "$2")
+    .replace(/\\([\\`*{}\[\]<>#+\-.!_])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+export function previewFromMarkdown(markdown: string) {
+  const lines = markdown.split(/\r?\n/);
+  const firstContent = lines.findIndex((line) => line.trim());
+  return plainPreview(firstContent === -1 ? "" : lines.slice(firstContent + 1).join("\n"));
+}
+
 export function noteTitle(note: Pick<import("../types").Note, "title"> & { body?: string }) {
-  return note.title.trim() || plainPreview(note.body || "").slice(0, 54) || "Untitled note";
+  return titleFromMarkdown(note.body || "") || note.title.trim() || "Untitled note";
 }
