@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "icons": "python3 scripts/round-full-icon.py Resources/app-icon.png -o app-icon.png && npm run tauri -- icon app-icon.png"
   },
   "dependencies": {
     "@codemirror/commands": "^6.8.1",

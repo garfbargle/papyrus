@@ -1,5 +1,6 @@
 # JavaScript / Vite
 node_modules/
+__pycache__/
 dist/
 .vite/
 *.tsbuildinfo
