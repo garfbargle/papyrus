@@ -98,6 +98,8 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
 .folder-group { margin-bottom: 1px; }
 .folder-head { position: relative; display: flex; align-items: center; border-radius: 8px; }
 .folder-head:hover { background: color-mix(in srgb, var(--paper-deep) 45%, transparent); }
+.folder-head.active { background: var(--accent-soft); }
+.folder-head.active .folder-toggle, .folder-head.active .folder-icon, .folder-head.active .chevron { color: var(--accent); }
 .folder-toggle { flex: 1; min-width: 0; height: 38px; display: flex; align-items: center; gap: 9px; padding: 0 40px 0 9px; background: transparent; color: var(--ink); font-size: 13px; font-weight: 600; }
 .folder-toggle .chevron { color: var(--soft); flex: 0 0 auto; transition: transform .18s ease; }
 .folder-toggle .chevron.collapsed { transform: rotate(-90deg); }
@@ -112,6 +114,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
 .folder-menu button:disabled { opacity: .34; cursor: default; }
 .folder-menu button:nth-child(3) svg { transform: rotate(180deg); }
 .folder-notes { margin: 0 0 5px 21px; padding-left: 8px; border-left: 1px solid var(--line); display: grid; gap: 1px; }
+.loose-notes { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); display: grid; gap: 1px; }
 .folder-empty { padding: 7px 10px; color: var(--soft); font-size: 11px; font-style: italic; }
 .folder-rename { display: flex; align-items: center; gap: 9px; flex: 1; height: 38px; padding: 0 9px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
 .folder-rename svg { flex: 0 0 auto; }
@@ -145,6 +148,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
 .pop-menu button svg:last-child { margin-left: auto; }
 .pop-menu button.danger { color: var(--danger); }
 .sub-menu { position: absolute; z-index: 9; top: -5px; right: calc(100% + 6px); min-width: 160px; max-height: 245px; overflow-y: auto; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); box-shadow: var(--shadow); }
+.context-menu { position: fixed; z-index: 65; top: 0; left: 0; right: auto; min-width: 188px; animation: menu-in .12s ease both; }
 .editor-controls { max-width: 828px; width: calc(100% - 88px); min-height: 38px; margin: 0 auto 11px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .format-tools { display: flex; align-items: center; gap: 1px; }
 .format-tools button { width: 27px; height: 27px; display: grid; place-items: center; padding: 0; border-radius: 5px; color: var(--muted); background: transparent; font-family: "DM Sans", sans-serif; font-size: 12px; }

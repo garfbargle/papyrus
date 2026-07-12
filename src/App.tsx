@@ -164,6 +164,17 @@ function App() {
     return () => window.removeEventListener("keydown", shortcut);
   });
 
+  useEffect(() => {
+    if (!categoryMenu && !noteMenu && !overflow) return;
+    const dismiss = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest(".pop-menu, .folder-more, .menu-wrap")) return;
+      setCategoryMenu(null); setNoteMenu(null); setOverflow(false); setMoveMenu(false);
+    };
+    window.addEventListener("mousedown", dismiss);
+    return () => window.removeEventListener("mousedown", dismiss);
+  }, [categoryMenu, noteMenu, overflow]);
+
   const persist = useCallback(async (note: Note) => {
     if (!note.body.trim()) return;
     const title = titleFromMarkdown(note.body);
@@ -201,18 +212,20 @@ function App() {
 
   const createNote = () => {
     if (pendingSave.current) window.clearTimeout(pendingSave.current);
-    const note = freshNote();
+    const categoryId = view === "notes" ? activeFolderId : null;
+    const note = { ...freshNote(), categoryId };
     currentRef.current = note; setCurrent(note); setNoteConflict(null); setReviewConflict(false); setOverflow(false); setMobileScreen("note"); setSourceMode(false);
+    if (categoryId) setExpanded((prev) => new Set(prev).add(categoryId));
     window.setTimeout(() => document.querySelector<HTMLElement>(".paper-editor")?.focus(), 50);
   };
 
   const changeMode = (next: ListMode) => {
-    setMode(next); setView("notes");
+    setMode(next); setView("notes"); if (next === "all") setActiveFolderId(null);
     void api.setSetting("listMode", next).catch(() => { /* preference stays in memory */ });
   };
 
   const openTrash = () => {
-    setView("trash"); setSettingsOpen(false); setSearch(""); setCurrent(null); currentRef.current = null;
+    setView("trash"); setSettingsOpen(false); setSearch(""); setCurrent(null); currentRef.current = null; setActiveFolderId(null);
     setNoteConflict(null); setReviewConflict(false); setOverflow(false); setMobileScreen("list");
   };
 
@@ -220,12 +233,14 @@ function App() {
     const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
   });
 
+  const selectFolder = (id: string) => { setActiveFolderId(id); toggleFolder(id); };
+
   const addCategory = async () => {
     const name = categoryName.trim(); if (!name) return;
     try {
       const category = await api.createCategory(name);
       setCategories((all) => [...all, category]); setCategoryName(""); setNewCategory(false);
-      setMode("folders"); setView("notes"); setExpanded((prev) => new Set(prev).add(category.id)); scheduleSync();
+      setMode("folders"); setView("notes"); setActiveFolderId(category.id); setExpanded((prev) => new Set(prev).add(category.id)); scheduleSync();
     } catch { setNotice("Could not create that folder."); }
   };
 
@@ -248,6 +263,7 @@ function App() {
     try {
       await api.deleteCategory(deletingCategory.id);
       setExpanded((prev) => { const next = new Set(prev); next.delete(deletingCategory.id); return next; });
+      setActiveFolderId((current) => current === deletingCategory.id ? null : current);
       setCategories((all) => all.filter((category) => category.id !== deletingCategory.id));
       setDeletingCategory(null); setCategoryMenu(null); await loadNotes("all", ""); scheduleSync(); setNotice("Folder removed; its notes are still safe");
     } catch { setNotice("Could not remove that folder."); }
@@ -283,6 +299,33 @@ function App() {
     const duplicate = placeLegacyTitleInBody(savedDuplicate); currentRef.current = duplicate; setCurrent(duplicate); setOverflow(false);
     if (duplicate.body !== savedDuplicate.body) void persist(duplicate);
     await loadNotes(); scheduleSync();
+  };
+
+  const trashNoteId = async (id: string) => {
+    setNoteMenu(null); await api.trashNote(id);
+    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; setNoteConflict(null); }
+    await loadNotes(); scheduleSync(); setNotice("Moved to Trash");
+  };
+
+  const restoreNoteId = async (id: string) => {
+    setNoteMenu(null); await api.restoreNote(id);
+    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; }
+    await loadNotes(); scheduleSync(); setNotice("Note restored");
+  };
+
+  const deleteNoteId = async (id: string) => {
+    setNoteMenu(null); await api.deleteNote(id);
+    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; }
+    await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
+  };
+
+  const duplicateNoteId = async (id: string) => {
+    setNoteMenu(null);
+    try {
+      const duplicate = placeLegacyTitleInBody(await api.duplicateNote(id));
+      currentRef.current = duplicate; setCurrent(duplicate); setNoteConflict(null); setMobileScreen("note"); setSourceMode(false);
+      await loadNotes(); scheduleSync();
+    } catch { setNotice("Could not duplicate this note."); }
   };
 
   const resolveConflict = async (resolution: "current" | "other" | "both") => {
@@ -334,7 +377,7 @@ function App() {
   const currentCategory = categories.find((category) => category.id === current?.categoryId);
 
   const noteRow = (note: NoteListItem, variant: "rich" | "compact") => (
-    <button key={note.id} className={`note-row ${variant}${current?.id === note.id ? " selected" : ""}`} onClick={() => void openNote(note.id)}>
+    <button key={note.id} className={`note-row ${variant}${current?.id === note.id ? " selected" : ""}`} onClick={() => void openNote(note.id)} onContextMenu={(event) => { event.preventDefault(); setOverflow(false); setCategoryMenu(null); setNoteMenu({ id: note.id, x: Math.min(event.clientX, window.innerWidth - 200), y: Math.min(event.clientY, window.innerHeight - 160) }); }}>
       <span className="note-row-title">{noteTitle(note)}</span>
       {variant === "rich" && <span className="note-row-preview">{note.preview || "No additional text"}</span>}
       <span className="note-row-meta">{variant === "rich" && <span>{note.categoryName || (view === "trash" ? "In Trash" : "")}</span>}<time>{relativeTime(note.updatedAt)}</time></span>
@@ -370,17 +413,18 @@ function App() {
                 {categories.map((category, index) => {
                   const items = notes.filter((note) => note.categoryId === category.id);
                   const open = expanded.has(category.id);
+                  const openMenu = () => setCategoryMenu((shown) => shown === category.id ? null : category.id);
                   return <div className="folder-group" key={category.id}>
-                    <div className="folder-head">
+                    <div className={`folder-head${activeFolderId === category.id ? " active" : ""}`} onContextMenu={(event) => { if (renamingCategory === category.id) return; event.preventDefault(); setNoteMenu(null); setActiveFolderId(category.id); setCategoryMenu(category.id); }}>
                       {renamingCategory === category.id
                         ? <form className="folder-rename" onSubmit={(event) => { event.preventDefault(); void renameFolder(); }}><Icon name="folder" size={16} /><input autoFocus value={renameCategoryName} maxLength={80} onChange={(event) => setRenameCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setRenamingCategory(null); }} onBlur={() => { if (!renameCategoryName.trim()) setRenamingCategory(null); }} /></form>
-                        : <button className="folder-toggle" onClick={() => toggleFolder(category.id)} aria-expanded={open}>
+                        : <button className="folder-toggle" onClick={() => selectFolder(category.id)} aria-expanded={open}>
                             <Icon name="chevronDown" size={15} className={open ? "chevron" : "chevron collapsed"} />
                             <Icon name="folder" size={16} className="folder-icon" />
                             <span className="folder-name">{category.name}</span>
                             <span className="folder-count">{items.length}</span>
                           </button>}
-                      {renamingCategory !== category.id && <button className="folder-more" onClick={() => setCategoryMenu((shown) => shown === category.id ? null : category.id)} aria-label={`Folder actions for ${category.name}`}><Icon name="dots" size={15} /></button>}
+                      {renamingCategory !== category.id && <button className="folder-more" onClick={openMenu} aria-label={`Folder actions for ${category.name}`}><Icon name="dots" size={15} /></button>}
                       {categoryMenu === category.id && <div className="folder-menu pop-menu">
                         <button onClick={() => { setRenamingCategory(category.id); setRenameCategoryName(category.name); setCategoryMenu(null); }}><Icon name="pen" />Rename</button>
                         <button disabled={index === 0} onClick={() => void moveFolder(category.id, -1)}><Icon name="arrowLeft" />Move up</button>
@@ -391,17 +435,7 @@ function App() {
                     {open && <div className="folder-notes">{items.length ? items.map((note) => noteRow(note, "compact")) : <div className="folder-empty">No notes yet</div>}</div>}
                   </div>;
                 })}
-                {uncategorized.length > 0 && <div className="folder-group">
-                  <div className="folder-head">
-                    <button className="folder-toggle" onClick={() => toggleFolder("__none__")} aria-expanded={expanded.has("__none__")}>
-                      <Icon name="chevronDown" size={15} className={expanded.has("__none__") ? "chevron" : "chevron collapsed"} />
-                      <Icon name="file" size={16} className="folder-icon" />
-                      <span className="folder-name">No folder</span>
-                      <span className="folder-count">{uncategorized.length}</span>
-                    </button>
-                  </div>
-                  {expanded.has("__none__") && <div className="folder-notes">{uncategorized.map((note) => noteRow(note, "compact"))}</div>}
-                </div>}
+                {uncategorized.length > 0 && <div className="loose-notes">{uncategorized.map((note) => noteRow(note, "rich"))}</div>}
                 {newCategory
                   ? <form className="folder-rename new" onSubmit={(event) => { event.preventDefault(); void addCategory(); }}><Icon name="folderPlus" size={16} /><input autoFocus value={categoryName} onChange={(event) => setCategoryName(event.target.value)} onBlur={() => { if (!categoryName.trim()) setNewCategory(false); }} placeholder="Folder name" /></form>
                   : <button className="add-folder" onClick={() => setNewCategory(true)}><Icon name="plus" size={15} />New Folder</button>}
@@ -438,6 +472,13 @@ function App() {
           </>}
         </> : <EmptyNote onCreate={createNote} />}
       </section>
+
+      {noteMenu && <div className="pop-menu context-menu" style={{ top: noteMenu.y, left: noteMenu.x }}>
+        <button onClick={() => void openNote(noteMenu.id)}><Icon name="file" />Open</button>
+        {view === "trash"
+          ? <><button onClick={() => void restoreNoteId(noteMenu.id)}><Icon name="undo" />Restore</button><button className="danger" onClick={() => void deleteNoteId(noteMenu.id)}><Icon name="trash" />Delete permanently</button></>
+          : <><button onClick={() => void duplicateNoteId(noteMenu.id)}><Icon name="copy" />Duplicate</button><button className="danger" onClick={() => void trashNoteId(noteMenu.id)}><Icon name="trash" />Move to Trash</button></>}
+      </div>}
 
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} onExport={exportNotebook} theme={theme} onThemeChange={changeTheme} font={font} onFontChange={changeFont} syncStatus={syncStatus} onSyncStatusChange={setSyncStatus} onNotebookChanged={refreshNotebook} onNotice={setNotice} />}
       {reviewConflict && noteConflict && <ConflictReview conflict={noteConflict} onClose={() => setReviewConflict(false)} onResolve={(choice) => void resolveConflict(choice)} />}
