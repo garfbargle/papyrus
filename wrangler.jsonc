@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "papyrus-web",
+  "compatibility_date": "2026-07-11",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "notes.c0di.com", "custom_domain": true }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
