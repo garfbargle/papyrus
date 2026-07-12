@@ -126,6 +126,10 @@ export default function PaperEditor({ value, onChange, onInsertImage }: Props) {
     const selection = window.getSelection();
     let block = closestBlock(selection?.anchorNode || null);
     if (block || !paper.current || !paper.current.textContent) return block;
+    // Only wrap loose text into a paragraph when there is no block structure yet.
+    // Never collapse existing blocks — that happens when the caret sits outside any
+    // block (e.g. right after toggling a checkbox) and would merge the title away.
+    if (paper.current.children.length) return block;
     block = document.createElement("p");
     while (paper.current.firstChild) block.append(paper.current.firstChild);
     paper.current.append(block); placeCaretAtEnd(block);
@@ -228,11 +232,23 @@ export default function PaperEditor({ value, onChange, onInsertImage }: Props) {
       suppressContentEditableWarning
       spellCheck
       data-placeholder="Begin with a thought…"
-      onInput={() => { applyShortcut(); commit(); }}
+      onInput={(event) => {
+        // A checkbox toggle bubbles an input event whose caret sits outside any block;
+        // running the shortcut pass there would reflow the document. It commits via onClick.
+        if ((event.target as HTMLElement).matches('input[type="checkbox"]')) return;
+        applyShortcut(); commit();
+      }}
       onKeyDown={continueChecklist}
       onKeyUp={rememberSelection}
       onMouseUp={rememberSelection}
-      onClick={(event) => { if ((event.target as HTMLElement).matches('input[type="checkbox"]')) window.setTimeout(commit, 0); }}
+      onClick={(event) => {
+        const target = event.target as HTMLElement;
+        if (!target.matches('input[type="checkbox"]')) return;
+        // Keep the caret on the toggled line instead of letting it drift to the title.
+        const item = target.closest<HTMLElement>("li");
+        if (item) placeCaretAtEnd(item);
+        window.setTimeout(commit, 0);
+      }}
       onContextMenu={(event) => { event.preventDefault(); rememberSelection(); setMenu({ left: event.clientX, top: event.clientY }); }}
     />
     {menu && <div className="paper-menu" ref={menuElement} style={{ left: menu.left, top: menu.top }} onMouseDown={(event) => event.preventDefault()}>
