@@ -7,6 +7,7 @@
     {
       "binding": "SYNC_DB",
       "database_name": "papyrus-sync-relay",
+      "database_id": "821115eb-9e83-4c53-b5b1-e47c51ab7e07",
       "migrations_dir": "migrations"
     }
   ],
