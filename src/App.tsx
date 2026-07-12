@@ -9,8 +9,9 @@ import { newId } from "./lib/ids";
 import { noteTitle, relativeTime, titleFromMarkdown } from "./lib/format";
 import type { Category, Note, NoteConflict, NoteListItem, SyncStatus } from "./types";
 
-type ActivePlace = "all" | "trash" | "settings" | string;
-type MobileScreen = "categories" | "notes" | "note";
+type NoteView = "notes" | "trash";
+type ListMode = "all" | "folders";
+type MobileScreen = "list" | "note";
 type ThemeId = "mist" | "graphite" | "nord" | "solarized" | "dracula" | "gruvbox";
 type FontId = "inter" | "manrope" | "dm-sans";
 
@@ -46,11 +47,16 @@ function placeLegacyTitleInBody(note: Note) {
 function App() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [notes, setNotes] = useState<NoteListItem[]>([]);
-  const [activePlace, setActivePlace] = useState<ActivePlace>("all");
+  const [view, setView] = useState<NoteView>("notes");
+  const [mode, setMode] = useState<ListMode>("all");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [noteMenu, setNoteMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [current, setCurrent] = useState<Note | null>(null);
   const [sourceMode, setSourceMode] = useState(false);
-  const [mobileScreen, setMobileScreen] = useState<MobileScreen>("categories");
+  const [mobileScreen, setMobileScreen] = useState<MobileScreen>("list");
   const [loading, setLoading] = useState(true);
   const [newCategory, setNewCategory] = useState(false);
   const [categoryName, setCategoryName] = useState("");
@@ -63,8 +69,7 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeId>("mist");
   const [font, setFont] = useState<FontId>("inter");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [editorExpanded, setEditorExpanded] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [noteConflict, setNoteConflict] = useState<NoteConflict | null>(null);
   const [reviewConflict, setReviewConflict] = useState(false);
@@ -73,13 +78,9 @@ function App() {
   const pendingSync = useRef<number | null>(null);
   const currentRef = useRef<Note | null>(null);
 
-  const filter = activePlace === "settings" ? "all" : activePlace;
-  const activeLabel = useMemo(() => {
-    if (activePlace === "all") return search ? "Search" : "All Notes";
-    if (activePlace === "trash") return "Trash";
-    if (activePlace === "settings") return "Settings";
-    return categories.find((category) => category.id === activePlace)?.name || "Notes";
-  }, [activePlace, categories, search]);
+  const filter = view === "trash" ? "trash" : "all";
+  const searching = search.trim().length > 0;
+  const uncategorized = useMemo(() => notes.filter((note) => !note.categoryId), [notes]);
 
   const loadNotes = useCallback(async (place = filter, query = search) => {
     const list = await api.listNotes(place, query);
@@ -115,11 +116,12 @@ function App() {
     (async () => {
       try {
         await api.initialize();
-        const [loadedCategories, loadedNotes, savedTheme, savedFont, loadedSyncStatus] = await Promise.all([api.listCategories(), api.listNotes("all"), api.getSetting("theme"), api.getSetting("font"), api.getSyncStatus()]);
+        const [loadedCategories, loadedNotes, savedTheme, savedFont, savedMode, loadedSyncStatus] = await Promise.all([api.listCategories(), api.listNotes("all"), api.getSetting("theme"), api.getSetting("font"), api.getSetting("listMode"), api.getSyncStatus()]);
         setCategories(loadedCategories); setNotes(loadedNotes);
         setSyncStatus(loadedSyncStatus);
         if (themes.some((item) => item.id === savedTheme)) setTheme(savedTheme as ThemeId);
         if (fonts.some((item) => item.id === savedFont)) setFont(savedFont as FontId);
+        if (savedMode === "all" || savedMode === "folders") setMode(savedMode);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Papyrus could not open the notebook.");
       } finally { setLoading(false); }
@@ -139,7 +141,7 @@ function App() {
     if (loading) return;
     const id = window.setTimeout(() => { void loadNotes(); }, search ? 120 : 0);
     return () => window.clearTimeout(id);
-  }, [activePlace, search, loading, loadNotes]);
+  }, [view, search, loading, loadNotes]);
 
   useEffect(() => () => {
     if (pendingSave.current) window.clearTimeout(pendingSave.current);
@@ -199,20 +201,31 @@ function App() {
 
   const createNote = () => {
     if (pendingSave.current) window.clearTimeout(pendingSave.current);
-    const note = { ...freshNote(), categoryId: activePlace !== "all" && activePlace !== "trash" && activePlace !== "settings" ? activePlace : null };
+    const note = freshNote();
     currentRef.current = note; setCurrent(note); setNoteConflict(null); setReviewConflict(false); setOverflow(false); setMobileScreen("note"); setSourceMode(false);
     window.setTimeout(() => document.querySelector<HTMLElement>(".paper-editor")?.focus(), 50);
   };
 
-  const switchPlace = (place: ActivePlace) => {
-    setActivePlace(place); setSearch(""); setCurrent(null); currentRef.current = null; setNoteConflict(null); setReviewConflict(false); setOverflow(false); setEditorExpanded(false); setMobileScreen(place === "settings" ? "note" : "notes");
+  const changeMode = (next: ListMode) => {
+    setMode(next); setView("notes");
+    void api.setSetting("listMode", next).catch(() => { /* preference stays in memory */ });
   };
+
+  const openTrash = () => {
+    setView("trash"); setSettingsOpen(false); setSearch(""); setCurrent(null); currentRef.current = null;
+    setNoteConflict(null); setReviewConflict(false); setOverflow(false); setMobileScreen("list");
+  };
+
+  const toggleFolder = (id: string) => setExpanded((prev) => {
+    const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next;
+  });
 
   const addCategory = async () => {
     const name = categoryName.trim(); if (!name) return;
     try {
       const category = await api.createCategory(name);
-      setCategories((all) => [...all, category]); setCategoryName(""); setNewCategory(false); switchPlace(category.id); scheduleSync();
+      setCategories((all) => [...all, category]); setCategoryName(""); setNewCategory(false);
+      setMode("folders"); setView("notes"); setExpanded((prev) => new Set(prev).add(category.id)); scheduleSync();
     } catch { setNotice("Could not create that folder."); }
   };
 
@@ -234,7 +247,7 @@ function App() {
     if (!deletingCategory) return;
     try {
       await api.deleteCategory(deletingCategory.id);
-      if (activePlace === deletingCategory.id) switchPlace("all");
+      setExpanded((prev) => { const next = new Set(prev); next.delete(deletingCategory.id); return next; });
       setCategories((all) => all.filter((category) => category.id !== deletingCategory.id));
       setDeletingCategory(null); setCategoryMenu(null); await loadNotes("all", ""); scheduleSync(); setNotice("Folder removed; its notes are still safe");
     } catch { setNotice("Could not remove that folder."); }
@@ -320,54 +333,93 @@ function App() {
 
   const currentCategory = categories.find((category) => category.id === current?.categoryId);
 
+  const noteRow = (note: NoteListItem, variant: "rich" | "compact") => (
+    <button key={note.id} className={`note-row ${variant}${current?.id === note.id ? " selected" : ""}`} onClick={() => void openNote(note.id)}>
+      <span className="note-row-title">{noteTitle(note)}</span>
+      {variant === "rich" && <span className="note-row-preview">{note.preview || "No additional text"}</span>}
+      <span className="note-row-meta">{variant === "rich" && <span>{note.categoryName || (view === "trash" ? "In Trash" : "")}</span>}<time>{relativeTime(note.updatedAt)}</time></span>
+    </button>
+  );
+
+  const flatMessage = searching ? "No notes match that search." : view === "trash" ? "Trash is empty." : "No notes yet. Tap New to begin.";
+
   return (
-    <main className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${editorExpanded ? "editor-expanded" : ""} ${mobileScreen === "categories" ? "show-categories" : mobileScreen === "notes" ? "show-notes" : "show-note"}`}>
-      <aside className="sidebar categories-pane">
-        <div className="brand"><span className="brand-mark" aria-hidden="true" /><span>Papyrus</span></div>
-        <nav className="nav-list" aria-label="Notebook navigation">
-          <button className={activePlace === "all" ? "nav-item active" : "nav-item"} onClick={() => switchPlace("all")}><Icon name="all" />All Notes</button>
-          <div className="nav-section-label">Folders</div>
-          {categories.map((category, index) => <div className="category-nav-row" key={category.id}>
-            {renamingCategory === category.id ? <form className="rename-category" onSubmit={(event) => { event.preventDefault(); void renameFolder(); }}><Icon name="folder" /><input autoFocus value={renameCategoryName} maxLength={80} onChange={(event) => setRenameCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setRenamingCategory(null); }} onBlur={() => { if (!renameCategoryName.trim()) setRenamingCategory(null); }} /></form> : <button className={activePlace === category.id ? "nav-item active" : "nav-item"} onClick={() => switchPlace(category.id)}><Icon name="folder" /><span>{category.name}</span></button>}
-            {renamingCategory !== category.id && <button className="category-menu-button" onClick={() => setCategoryMenu((open) => open === category.id ? null : category.id)} aria-label={`Folder actions for ${category.name}`}><Icon name="dots" size={15} /></button>}
-            {categoryMenu === category.id && <div className="category-menu pop-menu">
-              <button onClick={() => { setRenamingCategory(category.id); setRenameCategoryName(category.name); setCategoryMenu(null); }}><Icon name="file" />Rename</button>
-              <button disabled={index === 0} onClick={() => void moveFolder(category.id, -1)}><Icon name="arrowLeft" />Move up</button>
-              <button disabled={index === categories.length - 1} onClick={() => void moveFolder(category.id, 1)}><Icon name="arrowLeft" />Move down</button>
-              <button className="danger" onClick={() => { setDeletingCategory(category); setCategoryMenu(null); }}><Icon name="trash" />Remove folder</button>
-            </div>}
-          </div>)}
-          {newCategory ? <form className="new-category" onSubmit={(event) => { event.preventDefault(); void addCategory(); }}><Icon name="folderPlus" /><input autoFocus value={categoryName} onChange={(event) => setCategoryName(event.target.value)} onBlur={() => { if (!categoryName.trim()) setNewCategory(false); }} placeholder="Folder name" /></form> : <button className="nav-item quiet" onClick={() => setNewCategory(true)}><Icon name="plus" />Add Folder</button>}
-        </nav>
-        <div className="sidebar-footer">
-          {syncStatus && <button className="sidebar-sync" onClick={() => switchPlace("settings")} aria-label={`Sync: ${syncStatus.status}`}><i className={syncStatus.status.toLowerCase().replaceAll(" ", "-")} /><span>{syncStatus.status}</span>{syncStatus.pendingOutgoingChanges > 0 && <b>{syncStatus.pendingOutgoingChanges}</b>}</button>}
-          <button className={activePlace === "trash" ? "nav-item active" : "nav-item"} onClick={() => switchPlace("trash")}><Icon name="trash" />Trash</button>
-          <button className={activePlace === "settings" ? "nav-item active" : "nav-item"} onClick={() => switchPlace("settings")}><Icon name="sun" />Settings</button>
+    <main className={`app ${railCollapsed ? "rail-collapsed" : ""} ${mobileScreen === "note" ? "show-note" : "show-list"}`}>
+      <aside className="rail">
+        <div className="rail-head">
+          <div className="brand"><span className="brand-mark" aria-hidden="true" /><span>Papyrus</span></div>
+          <button className="new-note-button" onClick={createNote}><Icon name="plus" size={16} /><span>New</span></button>
+        </div>
+
+        {view === "trash" ? <div className="trash-bar">
+          <button className="trash-back" onClick={() => setView("notes")}><Icon name="arrowLeft" size={16} /><span>Notes</span></button>
+          <strong>Trash</strong>
+          {notes.length > 0 ? <button className="text-button" onClick={() => { void api.emptyTrash().then(async () => { await loadNotes(); scheduleSync(); }); }}>Empty</button> : <span className="trash-spacer" />}
+        </div> : <div className="segmented" role="tablist" aria-label="Note list mode">
+          <button role="tab" aria-selected={mode === "all"} className={mode === "all" ? "active" : ""} onClick={() => changeMode("all")}><Icon name="all" size={15} />All Notes</button>
+          <button role="tab" aria-selected={mode === "folders"} className={mode === "folders" ? "active" : ""} onClick={() => changeMode("folders")}><Icon name="folder" size={15} />Folders</button>
+        </div>}
+
+        <label className="search"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" aria-label="Search notes" /><kbd>⌘ K</kbd></label>
+
+        <div className="rail-list">
+          {loading ? <div className="list-message">Opening your notebook…</div>
+            : searching || view === "trash" || mode === "all"
+              ? (notes.length ? notes.map((note) => noteRow(note, "rich")) : <div className="list-message">{flatMessage}</div>)
+              : <>
+                {categories.map((category, index) => {
+                  const items = notes.filter((note) => note.categoryId === category.id);
+                  const open = expanded.has(category.id);
+                  return <div className="folder-group" key={category.id}>
+                    <div className="folder-head">
+                      {renamingCategory === category.id
+                        ? <form className="folder-rename" onSubmit={(event) => { event.preventDefault(); void renameFolder(); }}><Icon name="folder" size={16} /><input autoFocus value={renameCategoryName} maxLength={80} onChange={(event) => setRenameCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setRenamingCategory(null); }} onBlur={() => { if (!renameCategoryName.trim()) setRenamingCategory(null); }} /></form>
+                        : <button className="folder-toggle" onClick={() => toggleFolder(category.id)} aria-expanded={open}>
+                            <Icon name="chevronDown" size={15} className={open ? "chevron" : "chevron collapsed"} />
+                            <Icon name="folder" size={16} className="folder-icon" />
+                            <span className="folder-name">{category.name}</span>
+                            <span className="folder-count">{items.length}</span>
+                          </button>}
+                      {renamingCategory !== category.id && <button className="folder-more" onClick={() => setCategoryMenu((shown) => shown === category.id ? null : category.id)} aria-label={`Folder actions for ${category.name}`}><Icon name="dots" size={15} /></button>}
+                      {categoryMenu === category.id && <div className="folder-menu pop-menu">
+                        <button onClick={() => { setRenamingCategory(category.id); setRenameCategoryName(category.name); setCategoryMenu(null); }}><Icon name="pen" />Rename</button>
+                        <button disabled={index === 0} onClick={() => void moveFolder(category.id, -1)}><Icon name="arrowLeft" />Move up</button>
+                        <button disabled={index === categories.length - 1} onClick={() => void moveFolder(category.id, 1)}><Icon name="arrowLeft" />Move down</button>
+                        <button className="danger" onClick={() => { setDeletingCategory(category); setCategoryMenu(null); }}><Icon name="trash" />Remove folder</button>
+                      </div>}
+                    </div>
+                    {open && <div className="folder-notes">{items.length ? items.map((note) => noteRow(note, "compact")) : <div className="folder-empty">No notes yet</div>}</div>}
+                  </div>;
+                })}
+                {uncategorized.length > 0 && <div className="folder-group">
+                  <div className="folder-head">
+                    <button className="folder-toggle" onClick={() => toggleFolder("__none__")} aria-expanded={expanded.has("__none__")}>
+                      <Icon name="chevronDown" size={15} className={expanded.has("__none__") ? "chevron" : "chevron collapsed"} />
+                      <Icon name="file" size={16} className="folder-icon" />
+                      <span className="folder-name">No folder</span>
+                      <span className="folder-count">{uncategorized.length}</span>
+                    </button>
+                  </div>
+                  {expanded.has("__none__") && <div className="folder-notes">{uncategorized.map((note) => noteRow(note, "compact"))}</div>}
+                </div>}
+                {newCategory
+                  ? <form className="folder-rename new" onSubmit={(event) => { event.preventDefault(); void addCategory(); }}><Icon name="folderPlus" size={16} /><input autoFocus value={categoryName} onChange={(event) => setCategoryName(event.target.value)} onBlur={() => { if (!categoryName.trim()) setNewCategory(false); }} placeholder="Folder name" /></form>
+                  : <button className="add-folder" onClick={() => setNewCategory(true)}><Icon name="plus" size={15} />New Folder</button>}
+              </>}
+        </div>
+
+        <div className="rail-footer">
+          {syncStatus && <button className="sidebar-sync" onClick={() => setSettingsOpen(true)} aria-label={`Sync: ${syncStatus.status}`}><i className={syncStatus.status.toLowerCase().replaceAll(" ", "-")} /><span>{syncStatus.status}</span>{syncStatus.pendingOutgoingChanges > 0 && <b>{syncStatus.pendingOutgoingChanges}</b>}</button>}
+          <button className={view === "trash" ? "nav-item active" : "nav-item"} onClick={openTrash}><Icon name="trash" />Trash</button>
+          <button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="sun" />Settings</button>
         </div>
       </aside>
 
-      <section className="notes-pane">
-        <header className="notes-header">
-          <button className="mobile-back icon-button" onClick={() => setMobileScreen("categories")} aria-label="Back to folders"><Icon name="arrowLeft" /></button>
-          <button className="icon-button sidebar-toggle" onClick={() => setSidebarCollapsed((collapsed) => !collapsed)} aria-label={sidebarCollapsed ? "Show folders sidebar" : "Hide folders sidebar"} title={sidebarCollapsed ? "Show folders sidebar" : "Hide folders sidebar"}><Icon name="menu" /></button>
-          <h1>{activeLabel}</h1>
-          {activePlace === "trash" && notes.length > 0 ? <button className="text-button" onClick={() => { void api.emptyTrash().then(async () => { await loadNotes(); scheduleSync(); }); }}>Empty</button> : <button className="new-note-button" onClick={createNote}><Icon name="plus" size={16} /><span>New</span></button>}
-        </header>
-        <label className="search"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" aria-label="Search notes" /><kbd>⌘ K</kbd></label>
-        <div className="notes-list">
-          {loading ? <div className="list-message">Opening your notebook…</div> : notes.length === 0 ? <div className="list-message">{search ? "No notes match that search." : activePlace === "trash" ? "Trash is empty." : "No notes here yet."}</div> : notes.map((note) => <button key={note.id} className={current?.id === note.id ? "note-row selected" : "note-row"} onClick={() => void openNote(note.id)}>
-            <span className="note-row-title">{noteTitle(note)}</span>
-            <span className="note-row-preview">{note.preview || "No additional text"}</span>
-            <span className="note-row-meta"><span>{note.categoryName || (activePlace === "trash" ? "In Trash" : "")}</span><time>{relativeTime(note.updatedAt)}</time></span>
-          </button>)}
-        </div>
-      </section>
-
       <section className="note-pane">
-        {activePlace === "settings" ? <Settings onBack={() => setMobileScreen("categories")} onExport={exportNotebook} theme={theme} onThemeChange={changeTheme} font={font} onFontChange={changeFont} syncStatus={syncStatus} onSyncStatusChange={setSyncStatus} onNotebookChanged={refreshNotebook} onNotice={setNotice} /> : current ? <>
+        {current ? <>
           <header className="note-header">
-            <button className="mobile-back icon-button" onClick={() => setMobileScreen("notes")} aria-label="Back to notes"><Icon name="arrowLeft" /></button>
-            <button className="icon-button editor-expand-toggle" onClick={() => setEditorExpanded((expanded) => !expanded)} aria-label={editorExpanded ? "Show notes list" : "Expand editor and hide notes list"} title={editorExpanded ? "Show notes list" : "Expand editor"}><Icon name={editorExpanded ? "panelRight" : "panelLeft"} /></button>
+            <button className="mobile-back icon-button" onClick={() => setMobileScreen("list")} aria-label="Back to notes"><Icon name="arrowLeft" /></button>
+            <button className="icon-button editor-expand-toggle" onClick={() => setRailCollapsed((collapsed) => !collapsed)} aria-label={railCollapsed ? "Show notes list" : "Hide notes list"} title={railCollapsed ? "Show notes list" : "Focus editor"}><Icon name={railCollapsed ? "panelRight" : "panelLeft"} /></button>
             <div className="note-breadcrumb"><Icon name={currentCategory ? "folder" : "file"} size={15} /><span>{currentCategory?.name || "No folder"}</span></div>
             <div className="note-actions">
               {!current.deletedAt && <button className="icon-button" onClick={() => void share()} aria-label="Share note"><Icon name="share" /></button>}
@@ -384,8 +436,10 @@ function App() {
               {sourceMode ? <div className="writing-surface source-surface"><Suspense fallback={<div className="editor-loading">Opening Markdown source…</div>}><MarkdownEditor value={current.body} onChange={(body) => changeCurrent({ body })} onReady={(view) => { editor.current = view; }} /></Suspense></div> : <PaperEditor value={current.body} onChange={(body) => changeCurrent({ body })} onInsertImage={addImage} />}
             </div>
           </>}
-        </> : <EmptyNote onCreate={createNote} activePlace={activePlace} />}
+        </> : <EmptyNote onCreate={createNote} />}
       </section>
+
+      {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} onExport={exportNotebook} theme={theme} onThemeChange={changeTheme} font={font} onFontChange={changeFont} syncStatus={syncStatus} onSyncStatusChange={setSyncStatus} onNotebookChanged={refreshNotebook} onNotice={setNotice} />}
       {reviewConflict && noteConflict && <ConflictReview conflict={noteConflict} onClose={() => setReviewConflict(false)} onResolve={(choice) => void resolveConflict(choice)} />}
       {deletingCategory && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeletingCategory(null); }}><div className="pair-dialog compact" role="alertdialog" aria-modal="true" aria-labelledby="delete-folder-title"><span className="dialog-kicker danger">Remove folder</span><h2 id="delete-folder-title">Remove {deletingCategory.name}?</h2><p>The notes inside stay in your notebook and move to “No folder.” This change syncs to your other devices.</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setDeletingCategory(null)}>Cancel</button><button className="danger-button" onClick={() => void deleteFolder()}>Remove Folder</button></div></div></div>}
       {notice && <button className="toast" onClick={() => setNotice(null)}><Icon name="check" size={16} />{notice}</button>}
@@ -406,13 +460,12 @@ function ConflictReview({ conflict, onClose, onResolve }: { conflict: NoteConfli
   </div>;
 }
 
-function EmptyNote({ onCreate, activePlace }: { onCreate: () => void; activePlace: ActivePlace }) {
-  if (activePlace === "trash") return <div className="empty-note"><Icon name="trash" size={30} /><h2>Your trash is empty</h2><p>Notes you delete stay here for 30 days.</p></div>;
+function EmptyNote({ onCreate }: { onCreate: () => void }) {
   return <div className="empty-note"><span className="paper-glyph">✦</span><h2>A quiet place for every thought.</h2><p>Notes are private, stored locally, and written in ordinary Markdown.</p><button className="primary-button" onClick={onCreate}><Icon name="plus" size={17} />New note</button></div>;
 }
 
 type SettingsProps = {
-  onBack: () => void;
+  onClose: () => void;
   onExport: () => void;
   theme: ThemeId;
   onThemeChange: (theme: ThemeId) => void;
@@ -424,17 +477,22 @@ type SettingsProps = {
   onNotice: (message: string) => void;
 };
 
-function Settings({ onBack, onExport, theme, onThemeChange, font, onFontChange, syncStatus, onSyncStatusChange, onNotebookChanged, onNotice }: SettingsProps) {
-  return <div className="settings-shell">
-    <div className="settings-mobile-bar"><button className="icon-button" onClick={onBack} aria-label="Back to notebook"><Icon name="arrowLeft" /></button><strong>Settings</strong></div>
-    <div className="settings">
+function Settings({ onClose, onExport, theme, onThemeChange, font, onFontChange, syncStatus, onSyncStatusChange, onNotebookChanged, onNotice }: SettingsProps) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return <div className="settings-overlay" role="dialog" aria-modal="true" aria-label="Settings">
+    <div className="settings-topbar"><button className="icon-button" onClick={onClose} aria-label="Close settings"><Icon name="arrowLeft" /></button><strong>Settings</strong></div>
+    <div className="settings-scroll"><div className="settings">
       <header><span className="eyebrow">Notebook</span><h1>Settings</h1><p>Your notes stay local-first, readable, and yours—now with private sync when you want it.</p></header>
       <SyncSettings status={syncStatus} onStatusChange={onSyncStatusChange} onNotebookChanged={onNotebookChanged} onNotice={onNotice} />
       <section className="theme-section"><div><strong>Editor appearance</strong><span>Choose a comfortable colour palette for writing.</span></div><div className="theme-grid" role="group" aria-label="Editor appearance">{themes.map((option) => <button className={theme === option.id ? "theme-card selected" : "theme-card"} key={option.id} onClick={() => onThemeChange(option.id)} aria-pressed={theme === option.id}><span className="theme-preview" style={{ background: option.colors[0] }}><i style={{ background: option.colors[1] }} /><b style={{ background: option.colors[2] }} /></span><span><strong>{option.name}</strong><small>{option.description}</small></span>{theme === option.id && <Icon name="check" size={15} />}</button>)}</div></section>
       <section className="font-section"><div><strong>Writing font</strong><span>Use a clean sans serif throughout your notebook.</span></div><div className="font-options" role="group" aria-label="Writing font">{fonts.map((option) => <button className={font === option.id ? "font-option selected" : "font-option"} key={option.id} onClick={() => onFontChange(option.id)} aria-pressed={font === option.id}><span>{option.name}</span><small>{option.description}</small>{font === option.id && <Icon name="check" size={14} />}</button>)}</div></section>
       <section><div><strong>Export your notebook</strong><span>Create a ZIP of readable Markdown files, organized by folder.</span></div><button className="secondary-button" onClick={onExport}><Icon name="archive" size={17} />Export Markdown</button></section>
       <section><div><strong>Private by default</strong><span>Your relay transports encrypted packages only. Notes and keys remain unreadable there.</span></div><span className="status-pill"><i />Local-first</span></section>
-    </div>
+    </div></div>
   </div>;
 }
 
