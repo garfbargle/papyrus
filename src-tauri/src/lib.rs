@@ -364,6 +364,7 @@ fn export_notebook(destination: String, state: State<'_, AppState>) -> Result<()
     archive.finish().map_err(|error| error.to_string())?; Ok(())
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
