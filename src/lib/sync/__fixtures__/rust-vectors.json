@@ -1,0 +1,98 @@
+{
+  "envelope": {
+    "ciphertext": "jBKMkPT4fMQ7_VAAi-cGbly1KZnNM9ptBdIRtdFskSELHkXAO_zdPFhhcSoDg2YKDlbfUfzWxdY5vi6p6ZcoJkjmZGQN2PLTL66tziiluMBh3XsSbdZ4_kS4UqG55kUqZsuEkfUdJsuTUSGg9ouItJv2p7as964AxiuQlmA6XCNnvEXS-5LHEo66OSQH9N5NWOT0Ckinck2tuyqlSjGkjZIK8RVbsTtuESoJDXIX8u1wnNG4-Ko2mJNsYYjkMV7mBjaY5e1Xk3VnJSa-OhzFTN5SfV0jJR2By9enwgOFDulhFGJvbd9pRmKQv5_k2Xs7Y4nM1rgVm9PFC3zQ4Nl7wA5p_QlqvLRQZPrgDpbaszb30xMJu_6HKLG9UerE8nm5SGP25CjnT3wW1724lBBMadZ_6vmYBQTbgtt886fgcNfhk_7Qgw6cAQ41hFC3O3GlIvNp6bDxd4PkGV_BnWLVZO7GwuiChRJGGOa-zaNs2h6pJ-sK1XuELoU6rOCl1QwCkxzwRBQAsrqNz_fLHGE",
+    "createdAt": "2026-07-13T02:10:19.911459+00:00",
+    "keyEpoch": 1,
+    "nonce": "rd81VKYwhjnSNbMStnN1MXrDVlSAwCbY",
+    "packageId": "cc636699-c09c-4caa-860f-fd9cd68e2990",
+    "senderDeviceId": "rust-device",
+    "senderSigningKey": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+    "signature": "HHRTbIVCNuFADlfVsmtceTIiIhZjQljIpAIeJYIGT2tdR7yzUk1kuUPcLJNlhxyIDi7y_MJdTcBhzyVt8rrDAw",
+    "vaultId": "vault-fixture",
+    "version": 1
+  },
+  "envelopeExpectedOperation": {
+    "kind": "noteRevision",
+    "state": {
+      "body": "- milk\n- eggs\n- 🥚",
+      "categoryId": "cat-1",
+      "createdAt": "2026-07-12T00:00:00+00:00",
+      "deletedAt": null,
+      "id": "note-1",
+      "parentRevisionId": null,
+      "purgedAt": null,
+      "revisionId": "rev-1",
+      "title": "Grocery list",
+      "updatedAt": "2026-07-12T00:05:00+00:00"
+    }
+  },
+  "guest": {
+    "agreementPublicKey": "ew1H2TQn-DERYHgcfHM_2J-IlwrvSQ2KoO4ZpMuKGxQ",
+    "agreementSecret": "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM"
+  },
+  "identity": {
+    "agreementPublicKey": "D6poTtKIZ7l_Smot7l34zpdOdrcBjj8iocTPJnhXDyA",
+    "agreementSecret": "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
+    "deviceId": "rust-device",
+    "keyEpoch": 1,
+    "signingPublicKey": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+    "signingSeed": "ERERERERERERERERERERERERERERERERERERERERERE",
+    "vaultId": "vault-fixture",
+    "vaultKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+  },
+  "pairingSecret": "REREREREREREREREREREREREREREREREREREREREREQ",
+  "sealedPairingPayload": {
+    "expectedPlaintext": "c25hcHNob3QgYnl0ZXMg8J-TnQ",
+    "payload": {
+      "ciphertext": "cI9eBY1XFT3wjj7DAHiCFkBhWt-iukPUEmtnHaoAaZhQQyc",
+      "hostAgreementKey": "D6poTtKIZ7l_Smot7l34zpdOdrcBjj8iocTPJnhXDyA",
+      "nonce": "qdqXGlVNzgPJnKazhg82_H2veBZ-VR7z"
+    }
+  },
+  "vectors": {
+    "aad": {
+      "outputUtf8": "papyrus-sync/1/vault-fixture:pkg-123:1"
+    },
+    "contentHashNulls": {
+      "body": "",
+      "categoryId": null,
+      "deletedAt": null,
+      "output": "5e483d7e29a402b4095d668d8daa715298127f741bf6f37f9474eddf8b337009",
+      "title": "Untitled"
+    },
+    "contentHashWithCategory": {
+      "body": "- milk\n- eggs",
+      "categoryId": "cat-1",
+      "deletedAt": null,
+      "output": "3e2c415706afd828bfb12ba46cf3763709354142bfc4e29a762584c594542625",
+      "title": "Grocery list"
+    },
+    "ed25519": {
+      "messageUtf8": "papyrus-sign-test",
+      "signature": "ZG0y9_p_Fc57tCIkPqr_CQwmBAx2tLpp-xqWwLt6FuP9yYLlSUangb3f0ryeVTIbrvTTjiNLE28AYLwPgBamAA"
+    },
+    "pairingKey": {
+      "output": "iIgGlJOTWA8DHS8tdigjOR3dU0D6FGeG0gKNmTKrU9I"
+    },
+    "sha256Hex": {
+      "inputUtf8": "papyrus",
+      "output": "3567dd408c98adb2c841a3c78b207820c44ffb73bf57a5f69b21d4c4e55e788b"
+    },
+    "signable": {
+      "outputUtf8": "[1,\"pkg-123\",\"vault-fixture\",\"rust-device\",\"0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\",1,\"2026-07-12T00:00:00+00:00\",\"ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZm\",\"b3BhcXVl\"]"
+    },
+    "transportMessage": {
+      "bodyUtf8": "{\"ping\":true}",
+      "method": "POST",
+      "outputUtf8": "papyrus-relay-v1\nPOST\n/v1/packages\n2026-07-12T00:00:00+00:00\n5b871adb197c8d0d5961b9c660416758a58ebd630603814a81a386fc0f4535e3",
+      "path": "/v1/packages",
+      "timestamp": "2026-07-12T00:00:00+00:00"
+    },
+    "xchacha": {
+      "aadUtf8": "test-aad",
+      "ciphertext": "KuaSOJ4YLf9kS1G8VbAL-RtaLU8NANDmENoF6wwz",
+      "nonce": "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV",
+      "plaintextUtf8": "secret message"
+    }
+  }
+}

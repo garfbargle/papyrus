@@ -331,6 +331,24 @@ async function cleanupExpiredPackages(env: Env): Promise<void> {
   await env.SYNC_DB.prepare("UPDATE pairing_sessions SET state = 'expired', sealed_payload_key = NULL WHERE expires_at <= ?").bind(cutoff).run();
 }
 
+// The relay authenticates every mutating request with an Ed25519 transport
+// proof rather than cookies, so cross-origin access is not a security boundary
+// here — a browser client at any origin is allowed. We only need to answer
+// preflight and advertise the custom proof headers.
+const CORS_HEADERS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "POST, OPTIONS",
+  "access-control-allow-headers":
+    "content-type, x-papyrus-device, x-papyrus-signing-key, x-papyrus-timestamp, x-papyrus-signature",
+  "access-control-max-age": "86400",
+};
+
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(CORS_HEADERS)) headers.set(key, value);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 async function route(request: Request, env: Env): Promise<Response> {
   const path = new URL(request.url).pathname;
   if (request.method === "POST" && path === "/v1/packages") return handleUpload(request, env);
@@ -347,10 +365,11 @@ async function route(request: Request, env: Env): Promise<Response> {
 
 export default {
   async fetch(request, env): Promise<Response> {
-    try { return await route(request, env); }
+    if (request.method === "OPTIONS") return withCors(new Response(null, { status: 204 }));
+    try { return withCors(await route(request, env)); }
     catch (error) {
-      if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status });
-      return Response.json({ error: "Internal relay error" }, { status: 500 });
+      if (error instanceof HttpError) return withCors(Response.json({ error: error.message }, { status: error.status }));
+      return withCors(Response.json({ error: "Internal relay error" }, { status: 500 }));
     }
   },
   async scheduled(_controller, env): Promise<void> { await cleanupExpiredPackages(env); },

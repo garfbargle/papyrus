@@ -713,3 +713,237 @@ pub fn enqueue_operation(
     ).map_err(|error| error.to_string())?;
     Ok(())
 }
+
+// Cross-language crypto parity harness. These tests share fixed key material and
+// deterministic test vectors with the TypeScript web port (`src/lib/sync/crypto.ts`)
+// so both implementations stay wire-compatible. The flow is:
+//   1. `emit_crypto_fixtures` writes rust-vectors.json (run this first).
+//   2. the vitest parity test reproduces every vector, decrypts the Rust envelope,
+//      and writes ts-vectors.json.
+//   3. `verify_ts_fixtures` decrypts the TS-produced artifacts (reverse direction).
+#[cfg(test)]
+mod crypto_parity {
+    use super::*;
+    use std::path::PathBuf;
+
+    const VAULT_ID: &str = "vault-fixture";
+    const DEVICE_ID: &str = "rust-device";
+    const EPOCH: i64 = 1;
+
+    fn fixtures_dir() -> PathBuf {
+        // cwd during `cargo test` is the crate root (src-tauri).
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("src")
+            .join("lib")
+            .join("sync")
+            .join("__fixtures__")
+    }
+
+    fn host_identity() -> SyncIdentity {
+        let vault_key: [u8; 32] = std::array::from_fn(|i| i as u8);
+        SyncIdentity {
+            vault_id: VAULT_ID.to_string(),
+            vault_key_epoch: EPOCH,
+            vault_key,
+            device_id: DEVICE_ID.to_string(),
+            device_name: "Fixture Host".to_string(),
+            previous_vault_keys: Vec::new(),
+            signing_key: SigningKey::from_bytes(&[0x11u8; 32]),
+            agreement_secret: StaticSecret::from([0x22u8; 32]),
+        }
+    }
+
+    fn guest_agreement_secret() -> StaticSecret {
+        StaticSecret::from([0x33u8; 32])
+    }
+
+    fn pairing_secret() -> [u8; 32] {
+        [0x44u8; 32]
+    }
+
+    fn note_operation() -> SyncOperation {
+        SyncOperation::NoteRevision(NoteRevisionState {
+            id: "note-1".to_string(),
+            title: "Grocery list".to_string(),
+            body: "- milk\n- eggs\n- 🥚".to_string(),
+            category_id: Some("cat-1".to_string()),
+            created_at: "2026-07-12T00:00:00+00:00".to_string(),
+            updated_at: "2026-07-12T00:05:00+00:00".to_string(),
+            deleted_at: None,
+            purged_at: None,
+            revision_id: "rev-1".to_string(),
+            parent_revision_id: None,
+        })
+    }
+
+    #[test]
+    fn emit_crypto_fixtures() {
+        let host = host_identity();
+        let guest_secret = guest_agreement_secret();
+        let guest_pub = AgreementPublicKey::from(&guest_secret).as_bytes().to_vec();
+        let pairing = pairing_secret();
+
+        // Deterministic XChaCha20Poly1305 vector (fixed key/nonce/aad/plaintext).
+        let xnonce = [0x55u8; 24];
+        let cipher = XChaCha20Poly1305::new_from_slice(&host.vault_key).unwrap();
+        let x_ct = cipher
+            .encrypt(
+                XNonce::from_slice(&xnonce),
+                Payload {
+                    msg: b"secret message",
+                    aad: b"test-aad",
+                },
+            )
+            .unwrap();
+
+        // Deterministic Ed25519 signature over a fixed message.
+        let ed_sig = host.signing_key.sign(b"papyrus-sign-test").to_bytes();
+
+        // Reference for the `aad` / `signable` helpers via a fully-specified envelope.
+        let sample = SyncEnvelope {
+            version: PROTOCOL_VERSION,
+            package_id: "pkg-123".to_string(),
+            vault_id: VAULT_ID.to_string(),
+            sender_device_id: DEVICE_ID.to_string(),
+            sender_signing_key: URL_SAFE_NO_PAD.encode(host.signing_public_key()),
+            key_epoch: EPOCH,
+            created_at: "2026-07-12T00:00:00+00:00".to_string(),
+            nonce: URL_SAFE_NO_PAD.encode([0x66u8; 24]),
+            ciphertext: URL_SAFE_NO_PAD.encode(b"opaque"),
+            signature: String::new(),
+        };
+
+        // Transport-proof message reference (fixed timestamp + body).
+        let ts = "2026-07-12T00:00:00+00:00";
+        let mut body_hash = Sha256::new();
+        body_hash.update(b"{\"ping\":true}");
+        let transport_message = format!(
+            "papyrus-relay-v1\nPOST\n/v1/packages\n{ts}\n{:x}",
+            body_hash.finalize()
+        );
+
+        // Pairing key derivation (host secret ⨉ guest public, salted by the secret).
+        let derived = pairing_key(&host.agreement_secret, &guest_pub, &pairing).unwrap();
+
+        // A real end-to-end envelope and a sealed pairing payload for round-tripping.
+        let envelope = encrypt_operation(&host, note_operation()).unwrap();
+        let sealed =
+            seal_pairing_payload(&host, &guest_pub, &pairing, b"snapshot bytes \xf0\x9f\x93\x9d")
+                .unwrap();
+
+        let fixtures = serde_json::json!({
+            "identity": {
+                "vaultId": VAULT_ID,
+                "deviceId": DEVICE_ID,
+                "keyEpoch": EPOCH,
+                "vaultKey": URL_SAFE_NO_PAD.encode(host.vault_key),
+                "signingSeed": URL_SAFE_NO_PAD.encode([0x11u8; 32]),
+                "signingPublicKey": URL_SAFE_NO_PAD.encode(host.signing_public_key()),
+                "agreementSecret": URL_SAFE_NO_PAD.encode([0x22u8; 32]),
+                "agreementPublicKey": URL_SAFE_NO_PAD.encode(host.agreement_public_key()),
+            },
+            "guest": {
+                "agreementSecret": URL_SAFE_NO_PAD.encode([0x33u8; 32]),
+                "agreementPublicKey": URL_SAFE_NO_PAD.encode(&guest_pub),
+            },
+            "pairingSecret": URL_SAFE_NO_PAD.encode(pairing),
+            "vectors": {
+                "sha256Hex": {
+                    "inputUtf8": "papyrus",
+                    "output": sha256_hex(b"papyrus"),
+                },
+                "contentHashWithCategory": {
+                    "title": "Grocery list",
+                    "body": "- milk\n- eggs",
+                    "categoryId": "cat-1",
+                    "deletedAt": null,
+                    "output": content_hash("Grocery list", "- milk\n- eggs", Some("cat-1"), None),
+                },
+                "contentHashNulls": {
+                    "title": "Untitled",
+                    "body": "",
+                    "categoryId": null,
+                    "deletedAt": null,
+                    "output": content_hash("Untitled", "", None, None),
+                },
+                "aad": {
+                    "outputUtf8": String::from_utf8(aad(&sample)).unwrap(),
+                },
+                "signable": {
+                    "outputUtf8": String::from_utf8(signable(&sample).unwrap()).unwrap(),
+                },
+                "transportMessage": {
+                    "method": "POST",
+                    "path": "/v1/packages",
+                    "timestamp": ts,
+                    "bodyUtf8": "{\"ping\":true}",
+                    "outputUtf8": transport_message,
+                },
+                "ed25519": {
+                    "messageUtf8": "papyrus-sign-test",
+                    "signature": URL_SAFE_NO_PAD.encode(ed_sig),
+                },
+                "xchacha": {
+                    "nonce": URL_SAFE_NO_PAD.encode(xnonce),
+                    "aadUtf8": "test-aad",
+                    "plaintextUtf8": "secret message",
+                    "ciphertext": URL_SAFE_NO_PAD.encode(&x_ct),
+                },
+                "pairingKey": {
+                    "output": URL_SAFE_NO_PAD.encode(derived),
+                },
+            },
+            "envelope": envelope,
+            "envelopeExpectedOperation": note_operation(),
+            "sealedPairingPayload": {
+                "payload": sealed,
+                "expectedPlaintext": URL_SAFE_NO_PAD.encode(b"snapshot bytes \xf0\x9f\x93\x9d"),
+            },
+        });
+
+        let dir = fixtures_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("rust-vectors.json"),
+            serde_json::to_string_pretty(&fixtures).unwrap(),
+        )
+        .unwrap();
+    }
+
+    // Reverse direction: decrypt artifacts produced by the TypeScript port. Skips
+    // gracefully if the vitest parity test has not run yet.
+    #[test]
+    fn verify_ts_fixtures() {
+        let path = fixtures_dir().join("ts-vectors.json");
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            eprintln!("skipping: {} not present (run the vitest parity test first)", path.display());
+            return;
+        };
+        let doc: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let host = host_identity();
+
+        // 1. Decrypt a TS-encrypted envelope authored by the same identity.
+        let envelope: SyncEnvelope =
+            serde_json::from_value(doc["envelope"].clone()).unwrap();
+        let operation = decrypt_operation(&host, &envelope, &host.signing_public_key())
+            .expect("TS envelope should decrypt on the Rust side");
+        let recovered = serde_json::to_value(&operation).unwrap();
+        assert_eq!(
+            recovered, doc["envelopeExpectedOperation"],
+            "operation recovered from TS envelope must match"
+        );
+
+        // 2. Open a TS-sealed pairing payload as the guest.
+        let mut guest = host_identity();
+        guest.agreement_secret = guest_agreement_secret();
+        let sealed: SealedPairingPayload =
+            serde_json::from_value(doc["sealedPairingPayload"]["payload"].clone()).unwrap();
+        let plaintext = open_pairing_payload(&guest, &sealed, &pairing_secret())
+            .expect("TS-sealed pairing payload should open on the Rust side");
+        let expected = URL_SAFE_NO_PAD
+            .decode(doc["sealedPairingPayload"]["expectedPlaintext"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(plaintext, expected, "opened pairing plaintext must match");
+    }
+}

@@ -147,14 +147,13 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
       </div>
       <div className="sync-overview">
         <div className={`sync-state ${statusClass}`}><i /><span>{status?.status || "Checking…"}</span></div>
-        <button className="secondary-button" disabled={busy || !api.isNativeApp()} onClick={() => void syncNow()}><Icon name="undo" size={16} />{busy ? "Working…" : "Sync Now"}</button>
+        <button className="secondary-button" disabled={busy} onClick={() => void syncNow()}><Icon name="undo" size={16} />{busy ? "Working…" : "Sync Now"}</button>
       </div>
       <div className="sync-facts">
         <span>{status?.lastSuccessfulSync ? `Last synced ${relativeTime(status.lastSuccessfulSync)}` : "Not synced yet"}</span>
         <span>{status?.pendingOutgoingChanges ? `${status.pendingOutgoingChanges} change${status.pendingOutgoingChanges === 1 ? "" : "s"} waiting` : "No changes waiting"}</span>
       </div>
-      {status?.attentionMessage && api.isNativeApp() && <div className="sync-attention">{status.attentionMessage}</div>}
-      {!api.isNativeApp() && <div className="sync-attention">Install Papyrus on your phone or computer to use encrypted sync.</div>}
+      {status?.attentionMessage && <div className="sync-attention">{status.attentionMessage}</div>}
 
       <div className="device-name-row">
         <label><span>This device</span><input value={deviceName} maxLength={80} onChange={(event) => setDeviceName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void renameDevice(); }} /></label>
@@ -171,8 +170,8 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
       </div>
 
       <div className="pair-actions">
-        <button className="primary-button" disabled={busy || !api.isNativeApp()} onClick={() => void startHostPairing()}><Icon name="plus" size={17} />Add Device</button>
-        <button className="secondary-button" disabled={busy || !api.isNativeApp()} onClick={() => setPairView("join")}><Icon name="link" size={17} />Pair Existing Notebook</button>
+        <button className="primary-button" disabled={busy} onClick={() => void startHostPairing()}><Icon name="plus" size={17} />Add Device</button>
+        <button className="secondary-button" disabled={busy} onClick={() => setPairView("join")}><Icon name="link" size={17} />Pair Existing Notebook</button>
       </div>
     </section>
 
