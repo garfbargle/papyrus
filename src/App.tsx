@@ -6,6 +6,7 @@ import PaperEditor from "./components/PaperEditor";
 import SyncSettings from "./components/SyncSettings";
 import { api } from "./lib/api";
 import { newId } from "./lib/ids";
+import { readImageFile } from "./lib/images";
 import { noteTitle, relativeTime, titleFromMarkdown } from "./lib/format";
 import type { Category, Note, NoteConflict, NoteListItem, SyncStatus } from "./types";
 
@@ -389,10 +390,7 @@ function App() {
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) { resolve(null); return; }
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-      reader.onerror = () => { setNotice("Could not read that image."); resolve(null); };
-      reader.readAsDataURL(file);
+      readImageFile(file).then(resolve).catch((error) => { setNotice(error instanceof Error ? error.message : "Could not read that image."); resolve(null); });
     };
     input.click();
   });
@@ -500,7 +498,7 @@ function App() {
           {current.deletedAt ? <div className="trashed-note"><div><Icon name="trash" size={20} /><strong>This note is in Trash</strong><span>It will be permanently removed after 30 days.</span></div><button className="primary-button" onClick={() => void restoreCurrent()}>Restore Note</button></div> : <>
             {noteConflict && <div className="conflict-banner"><span><i>!</i><span><strong>Two versions need your attention</strong><small>Both are safe. Choose which one to keep.</small></span></span><button onClick={() => setReviewConflict(true)}>Review Versions</button></div>}
             <div className={`document ${sourceMode ? "source" : "paper"}`}>
-              {sourceMode ? <div className="writing-surface source-surface"><Suspense fallback={<div className="editor-loading">Opening Markdown source…</div>}><MarkdownEditor value={current.body} onChange={(body) => changeCurrent({ body })} onReady={(view) => { editor.current = view; }} /></Suspense></div> : <PaperEditor value={current.body} onChange={(body) => changeCurrent({ body })} onInsertImage={addImage} />}
+              {sourceMode ? <div className="writing-surface source-surface"><Suspense fallback={<div className="editor-loading">Opening Markdown source…</div>}><MarkdownEditor value={current.body} onChange={(body) => changeCurrent({ body })} onReady={(view) => { editor.current = view; }} /></Suspense></div> : <PaperEditor value={current.body} onChange={(body) => changeCurrent({ body })} onInsertImage={addImage} onNotice={setNotice} />}
             </div>
           </>}
         </> : <EmptyNote onCreate={createNote} />}

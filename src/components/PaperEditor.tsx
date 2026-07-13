@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { renderMarkdown } from "../lib/markdown";
+import { imageFilesFrom, readImageFile } from "../lib/images";
 
 type Menu = { left: number; top: number } | null;
 type Props = {
   value: string;
   onChange: (markdown: string) => void;
   onInsertImage: () => Promise<string | null>;
+  onNotice?: (message: string) => void;
 };
 
 const blockSelector = "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre";
@@ -79,8 +81,9 @@ function placeCaretInText(text: Text) {
   range.setStart(text, text.data.length); range.collapse(true); selection?.removeAllRanges(); selection?.addRange(range);
 }
 
-export default function PaperEditor({ value, onChange, onInsertImage }: Props) {
+export default function PaperEditor({ value, onChange, onInsertImage, onNotice }: Props) {
   const paper = useRef<HTMLElement>(null);
+  const [dragActive, setDragActive] = useState(false);
   // Start unset so a note opened directly into paper mode is rendered on mount.
   const knownValue = useRef<string | null>(null);
   const savedSelection = useRef<Range | null>(null);
@@ -109,6 +112,27 @@ export default function PaperEditor({ value, onChange, onInsertImage }: Props) {
     const markdown = markdownFromPaper(paper.current);
     knownValue.current = markdown;
     onChange(markdown);
+  };
+
+  // Insert dropped/pasted images at the caret. `caret` places the caret first (used by
+  // drop, where the caret should land where the file was released).
+  const insertImageFiles = async (files: File[], caret?: Range | null) => {
+    if (!files.length || !paper.current) return;
+    paper.current.focus();
+    if (caret) {
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(caret);
+    }
+    for (const file of files) {
+      try {
+        const source = await readImageFile(file);
+        document.execCommand("insertImage", false, source);
+      } catch (error) {
+        onNotice?.(error instanceof Error ? error.message : "Could not add that image.");
+      }
+    }
+    requestAnimationFrame(commit);
   };
 
   const rememberSelection = () => {
@@ -226,12 +250,35 @@ export default function PaperEditor({ value, onChange, onInsertImage }: Props) {
 
   return <>
     <article
-      className="paper-editor markdown-preview"
+      className={`paper-editor markdown-preview${dragActive ? " drag-active" : ""}`}
       ref={paper}
       contentEditable
       suppressContentEditableWarning
       spellCheck
       data-placeholder="Begin with a thought…"
+      onDragOver={(event: ReactDragEvent) => {
+        if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        if (!dragActive) setDragActive(true);
+      }}
+      onDragLeave={(event: ReactDragEvent) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragActive(false);
+      }}
+      onDrop={(event: ReactDragEvent) => {
+        const files = imageFilesFrom(event.dataTransfer);
+        setDragActive(false);
+        if (!files.length) return;
+        event.preventDefault();
+        const point = document.caretRangeFromPoint?.(event.clientX, event.clientY) ?? null;
+        void insertImageFiles(files, point);
+      }}
+      onPaste={(event: ReactClipboardEvent) => {
+        const files = imageFilesFrom(event.clipboardData);
+        if (!files.length) return;
+        event.preventDefault();
+        void insertImageFiles(files);
+      }}
       onInput={(event) => {
         // A checkbox toggle bubbles an input event whose caret sits outside any block;
         // running the shortcut pass there would reflow the document. It commits via onClick.

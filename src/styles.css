@@ -207,6 +207,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
 .paper-editor:focus { outline: none; }
 .paper-editor h1, .paper-editor h2, .paper-editor h3, .paper-editor p, .paper-editor li, .paper-editor blockquote { cursor: text; }
 .paper-editor img { cursor: default; }
+.paper-editor.drag-active { border-radius: 10px; box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
 .source-surface { height: 100%; padding: 9px 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper-warm); }
 .editor-loading { padding: 16px 2px; color: var(--muted); font-size: 12px; }
 .paper-menu { position: fixed; z-index: 30; width: 176px; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); box-shadow: var(--shadow); animation: menu-in .12s ease both; }
