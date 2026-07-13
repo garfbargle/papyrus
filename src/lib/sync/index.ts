@@ -153,15 +153,27 @@ export async function getSyncStatus(): Promise<SyncStatus> {
   };
 }
 
+// A cycle pushes and pulls in one pass; overlapping runs would double-drain the
+// outbox. With automatic sync (foreground poll + post-change debounce) plus the
+// manual "Sync Now" button, concurrent calls are expected — so coalesce them: a
+// call arriving while a cycle is in flight joins that cycle instead of starting
+// a second one, and a call arriving after it completes starts a fresh cycle.
+let cycleInFlight: Promise<void> | null = null;
+
 export async function syncNow(): Promise<SyncStatus> {
   const ctx = await context();
   if (await relayConfigured()) {
-    try {
-      await runSyncCycle(ctx);
-    } catch (error) {
-      if (!(error instanceof DeviceRevokedError)) throw error;
-      await store.setSyncState("last_sync_error", "This device is no longer authorized for the notebook.");
+    if (!cycleInFlight) {
+      cycleInFlight = (async () => {
+        try {
+          await runSyncCycle(ctx);
+        } catch (error) {
+          if (!(error instanceof DeviceRevokedError)) throw error;
+          await store.setSyncState("last_sync_error", "This device is no longer authorized for the notebook.");
+        }
+      })().finally(() => { cycleInFlight = null; });
     }
+    await cycleInFlight;
   }
   return getSyncStatus();
 }
@@ -236,6 +248,7 @@ export async function configureRelayUrl(url: string): Promise<void> {
 // Test/reset helper.
 export function resetContextForTests(): void {
   contextPromise = null;
+  cycleInFlight = null;
 }
 
 export type { WebIdentity };

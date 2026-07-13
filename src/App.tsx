@@ -80,6 +80,12 @@ function App() {
   const editor = useRef<EditorView | null>(null);
   const pendingSave = useRef<number | null>(null);
   const pendingSync = useRef<number | null>(null);
+  const syncInFlight = useRef(false);
+  const syncQueued = useRef(false);
+  // Auto-sync only matters once this device is paired with at least one other —
+  // a cycle with no peers is a pure no-op. Mirror that into a ref so the timers
+  // and event listeners can read it without being torn down on every status tick.
+  const autoSyncEnabled = useRef(false);
   const currentRef = useRef<Note | null>(null);
 
   const filter = view === "trash" ? "trash" : "all";
@@ -103,17 +109,28 @@ function App() {
     }
   }, [filter, search]);
 
+  // A sync cycle pushes and pulls in one pass, so overlapping runs would double-
+  // drain the outbox. Serialize them: if one is in flight, remember that another
+  // was asked for and run exactly once more when it finishes (so the latest local
+  // change is never left behind).
   const runSync = useCallback(async () => {
-    if (!api.isNativeApp()) return;
+    if (syncInFlight.current) { syncQueued.current = true; return; }
+    syncInFlight.current = true;
     setSyncStatus((status) => status ? { ...status, status: "Syncing" } : status);
     try { const next = await api.syncNow(); setSyncStatus(next); await refreshNotebook(); }
     catch { try { setSyncStatus(await api.getSyncStatus()); } catch { /* editing remains local */ } }
+    finally {
+      syncInFlight.current = false;
+      if (syncQueued.current) { syncQueued.current = false; void runSync(); }
+    }
   }, [refreshNotebook]);
 
+  // Coalesce a burst of edits into one push: sync ~15s after the last change.
+  // The foreground poll below is the safety net while editing continuously.
   const scheduleSync = useCallback(() => {
-    if (!api.isNativeApp()) return;
+    if (!autoSyncEnabled.current) return;
     if (pendingSync.current) window.clearTimeout(pendingSync.current);
-    pendingSync.current = window.setTimeout(() => { pendingSync.current = null; void runSync(); }, 750);
+    pendingSync.current = window.setTimeout(() => { pendingSync.current = null; void runSync(); }, 15 * 1000);
   }, [runSync]);
 
   useEffect(() => {
@@ -132,10 +149,14 @@ function App() {
     })();
   }, []);
 
+  // Keep the auto-sync gate in sync with the device list without re-arming the
+  // timers below (which depend only on `loading`).
+  useEffect(() => { autoSyncEnabled.current = (syncStatus?.devices.length ?? 0) > 1; }, [syncStatus]);
+
   useEffect(() => {
-    if (loading || !api.isNativeApp()) return;
-    const trigger = () => { if (document.visibilityState === "visible") void runSync(); };
-    const interval = window.setInterval(trigger, 2 * 60 * 1000);
+    if (loading) return;
+    const trigger = () => { if (autoSyncEnabled.current && document.visibilityState === "visible") void runSync(); };
+    const interval = window.setInterval(trigger, 60 * 1000);
     document.addEventListener("visibilitychange", trigger); window.addEventListener("focus", trigger); window.addEventListener("online", trigger);
     const launch = window.setTimeout(trigger, 500);
     return () => { window.clearInterval(interval); window.clearTimeout(launch); document.removeEventListener("visibilitychange", trigger); window.removeEventListener("focus", trigger); window.removeEventListener("online", trigger); };
