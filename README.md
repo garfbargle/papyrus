@@ -15,7 +15,7 @@ Runs everywhere. Syncs end-to-end encrypted. Never waits on the network.
 
 ![Papyrus — the app, showing a note about marketing the app](docs/screenshot.png)
 
-<sub>Yes, that screenshot is a note in Papyrus, about marketing Papyrus, written in Papyrus. We're aware. It's fine.</sub>
+<sub>Yes, that screenshot is a note in Papyrus, about marketing Papyrus, written in Papyrus — and the theme swatches are an image pasted *into* that note. We're aware. It's fine.</sub>
 
 </div>
 
