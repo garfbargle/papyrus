@@ -382,8 +382,24 @@ function App() {
     void api.setSetting("font", nextFont).catch(() => setNotice("Could not save that font preference."));
   };
 
+  const pickImageInBrowser = (): Promise<string | null> => new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png,image/jpeg,image/gif,image/webp";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(null); return; }
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+      reader.onerror = () => { setNotice("Could not read that image."); resolve(null); };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  });
+
   const addImage = async (): Promise<string | null> => {
     try {
+      if (!api.isNativeApp()) return await pickImageInBrowser();
       const source = await open({ multiple: false, filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "gif", "webp"] }] });
       if (!source || Array.isArray(source)) return null;
       return await api.embedImage(source);
