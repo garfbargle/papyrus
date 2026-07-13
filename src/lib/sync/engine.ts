@@ -74,11 +74,27 @@ export async function runSyncCycle(ctx: SyncContext): Promise<void> {
   // 3. Apply + ack.
   for (const pkg of packages) {
     if (pkg.packageId !== pkg.envelope.packageId) continue;
-    try {
-      const key = await expectedSigningKey(pkg.envelope.senderDeviceId);
-      if (!key) continue; // unknown or revoked sender
+    const key = await expectedSigningKey(pkg.envelope.senderDeviceId);
+    if (!key) continue; // unknown or revoked sender
 
-      const operation = decryptOperation(ctx.identity, pkg.envelope, key) as unknown as SyncOperation;
+    let operation: SyncOperation;
+    try {
+      operation = decryptOperation(ctx.identity, pkg.envelope, key) as unknown as SyncOperation;
+    } catch (error) {
+      // A package sealed with an epoch older than our current vault key that we no
+      // longer hold predates this device's view of the vault and can never be
+      // decrypted. Acknowledge it to clear the inbox rather than retrying forever
+      // and pinning a permanent sync error. Newer epochs are kept for a later pass.
+      if (pkg.envelope.keyEpoch < ctx.identity.vaultKeyEpoch) {
+        await ackQuietly(ctx, pkg.envelope);
+      } else {
+        hadError = true;
+        await setSyncState("last_sync_error", error instanceof Error ? error.message : String(error));
+      }
+      continue;
+    }
+
+    try {
       const rotation = await applyRemoteOperation(ctx.identity, pkg.envelope, operation);
       if (rotation) {
         const next = adoptVault(

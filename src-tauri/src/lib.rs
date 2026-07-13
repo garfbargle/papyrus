@@ -2431,11 +2431,26 @@ fn run_sync_cycle(state: &AppState) -> Result<SyncStatus> {
         let operation = match sync::decrypt_operation(&identity, &remote.envelope, &expected_key) {
             Ok(operation) => operation,
             Err(message) => {
-                let connection = state
-                    .db
-                    .lock()
-                    .map_err(|_| "Notebook is busy".to_string())?;
-                set_sync_state(&connection, "last_sync_error", &message)?;
+                // A package sealed with an epoch older than our current vault key
+                // that we no longer hold predates this device's view of the vault
+                // (e.g. traffic the relay still held from before we joined or
+                // before a key rotation). It can never be decrypted, so acknowledge
+                // it to clear the inbox instead of retrying forever and pinning a
+                // permanent sync error.
+                if remote.envelope.key_epoch < identity.vault_key_epoch {
+                    let acknowledgment = AcknowledgePackage {
+                        vault_id: identity.vault_id.clone(),
+                        device_id: identity.device_id.clone(),
+                        package_id: remote.package_id.clone(),
+                    };
+                    let _ = transport.acknowledge(&identity, &acknowledgment);
+                } else {
+                    let connection = state
+                        .db
+                        .lock()
+                        .map_err(|_| "Notebook is busy".to_string())?;
+                    set_sync_state(&connection, "last_sync_error", &message)?;
+                }
                 continue;
             }
         };

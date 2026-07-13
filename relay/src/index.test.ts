@@ -77,6 +77,37 @@ describe("encrypted relay authorization", () => {
     expect((await signedPost("/v1/packages", phone, upload)).status).toBe(403);
   });
 
+  async function claimSession(host: TestDevice, guest: TestDevice, vaultId: string, sessionId: string, secret: string) {
+    const secretHash = await sha256Hex(encoder.encode(secret));
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    expect((await signedPost("/v1/pairing/start", host, { vaultId, sessionId, secretHash, expiresAt })).status).toBe(200);
+    const hello = await SELF.fetch("https://relay.test/v1/pairing/hello", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId, secret, deviceId: guest.id, displayName: "Phone", signingKey: guest.publicKey, agreementKey: base64Url(new Uint8Array(32).fill(3)) }) });
+    expect(hello.status).toBe(200);
+  }
+
+  it("makes a re-pair of an already-registered device idempotent instead of a 500", async () => {
+    const host = await device("host"); const guest = await device("guest"); const vaultId = "vault";
+    // First pairing: start auto-creates the vault + host, hello claims, complete registers the guest.
+    await claimSession(host, guest, vaultId, "session-1", "secret-1");
+    expect((await signedPost("/v1/pairing/complete", host, { sessionId: "session-1", deviceId: guest.id, sealedPayload: "sealed-1" })).status).toBe(200);
+    // Second pairing of the SAME device to the SAME vault (device never finished before) must succeed, not 500.
+    await claimSession(host, guest, vaultId, "session-2", "secret-2");
+    expect((await signedPost("/v1/pairing/complete", host, { sessionId: "session-2", deviceId: guest.id, sealedPayload: "sealed-2" })).status).toBe(200);
+    const rows = await env.SYNC_DB.prepare("SELECT COUNT(*) AS n FROM devices WHERE id = ?").bind(guest.id).first<{ n: number }>();
+    expect(rows?.n).toBe(1);
+  });
+
+  it("rejects starting a new vault for a device already linked elsewhere with a 409, not a 500", async () => {
+    const host = await device("host"); const guest = await device("guest");
+    await claimSession(host, guest, "vault-a", "session-a", "secret-a");
+    expect((await signedPost("/v1/pairing/complete", host, { sessionId: "session-a", deviceId: guest.id, sealedPayload: "sealed" })).status).toBe(200);
+    // The guest device now belongs to vault-a. Trying to host its own new vault must be a clean 409.
+    const expiresAt = new Date(Date.now() + 4 * 60 * 1000).toISOString();
+    const conflict = await signedPost("/v1/pairing/start", guest, { vaultId: "vault-b", sessionId: "session-b", secretHash: await sha256Hex(encoder.encode("x")), expiresAt });
+    expect(conflict.status).toBe(409);
+  });
+
   it("rejects a proof if the request body changes after signing", async () => {
     const author = await device("host"); const body = JSON.stringify({ vaultId: "vault", deviceId: "host", limit: 32 }); const timestamp = new Date().toISOString();
     const original = encoder.encode(`papyrus-relay-v1\nPOST\n/v1/packages/fetch\n${timestamp}\n${await sha256Hex(encoder.encode(body))}`);

@@ -247,6 +247,11 @@ async function handlePairingStart(request: Request, env: Env): Promise<Response>
   if (!Number.isFinite(expiration) || expiration <= Date.now() || expiration > Date.now() + PAIRING_LIFETIME_MS) throw new HttpError(400, "Invalid pairing expiry.");
   const existingVault = await env.SYNC_DB.prepare("SELECT id FROM vaults WHERE id = ?").bind(payload.vaultId).first<{ id: string }>();
   if (!existingVault) {
+    // A device id is globally unique (devices_global_id_idx). If this device is
+    // already a member of some other vault, creating a fresh vault for it would
+    // violate that index and surface as an opaque 500. Reject it clearly instead.
+    const linkedElsewhere = await env.SYNC_DB.prepare("SELECT vault_id FROM devices WHERE id = ?").bind(auth.id).first<{ vault_id: string }>();
+    if (linkedElsewhere) throw new HttpError(409, "This device is already linked to another notebook.");
     await env.SYNC_DB.batch([
       env.SYNC_DB.prepare("INSERT INTO vaults(id, created_at) VALUES (?, ?)").bind(payload.vaultId, new Date().toISOString()),
       env.SYNC_DB.prepare("INSERT INTO devices(vault_id, id, signing_key, status, created_at) VALUES (?, ?, ?, 'active', ?)").bind(payload.vaultId, auth.id, auth.signingKey, new Date().toISOString()),
@@ -289,10 +294,15 @@ async function handlePairingComplete(request: Request, env: Env): Promise<Respon
   const pairing = await env.SYNC_DB.prepare("SELECT id, vault_id, host_device_id, state, guest_device_id, guest_signing_key FROM pairing_sessions WHERE id = ?").bind(payload.sessionId).first<PairingRow>();
   if (!pairing || pairing.state !== "claimed" || pairing.host_device_id !== auth.id || pairing.guest_device_id !== payload.deviceId || !pairing.guest_signing_key) throw new HttpError(409, "Pairing session is not ready.");
   await activeDevice(env, pairing.vault_id, auth.id);
+  // The guest may already be registered under this vault from an earlier pairing
+  // attempt that never finished on the device (idempotent re-pair). Only a device
+  // registered under a *different* vault is a genuine conflict.
+  const linkedElsewhere = await env.SYNC_DB.prepare("SELECT vault_id FROM devices WHERE id = ? AND vault_id != ?").bind(payload.deviceId, pairing.vault_id).first<{ vault_id: string }>();
+  if (linkedElsewhere) throw new HttpError(409, "This device is already linked to another notebook.");
   const sealedPayloadKey = `pairing/${payload.sessionId}`;
   await env.SYNC_PACKAGES.put(sealedPayloadKey, payload.sealedPayload, { httpMetadata: { contentType: "application/json" } });
   await env.SYNC_DB.batch([
-    env.SYNC_DB.prepare("INSERT INTO devices(vault_id, id, signing_key, status, created_at) VALUES (?, ?, ?, 'active', ?)").bind(pairing.vault_id, payload.deviceId, pairing.guest_signing_key, new Date().toISOString()),
+    env.SYNC_DB.prepare("INSERT INTO devices(vault_id, id, signing_key, status, created_at) VALUES (?, ?, ?, 'active', ?) ON CONFLICT(vault_id, id) DO UPDATE SET signing_key = excluded.signing_key, status = 'active'").bind(pairing.vault_id, payload.deviceId, pairing.guest_signing_key, new Date().toISOString()),
     env.SYNC_DB.prepare("UPDATE pairing_sessions SET state = 'complete', sealed_payload_key = ? WHERE id = ?").bind(sealedPayloadKey, payload.sessionId),
   ]);
   return Response.json({ complete: true });
@@ -369,6 +379,8 @@ export default {
     try { return withCors(await route(request, env)); }
     catch (error) {
       if (error instanceof HttpError) return withCors(Response.json({ error: error.message }, { status: error.status }));
+      // Observability: never let an unexpected failure vanish as a bare 500.
+      console.error("Unhandled relay error", request.method, new URL(request.url).pathname, error instanceof Error ? (error.stack ?? error.message) : String(error));
       return withCors(Response.json({ error: "Internal relay error" }, { status: 500 }));
     }
   },
