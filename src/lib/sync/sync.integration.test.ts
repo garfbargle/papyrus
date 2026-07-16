@@ -123,4 +123,85 @@ run("web sync end-to-end against a live relay", () => {
     const hostNote = await on(hostDb, () => store.getNote(noteId));
     expect(hostNote?.body).toContain("edited on the guest ✍️");
   }, 30000);
+
+  it("merges a guest's own notes into the vault it joins instead of wiping them", async () => {
+    const relay = new RelayClient(RELAY_URL!);
+    const suffix = encodeBase64Url(crypto.getRandomValues(new Uint8Array(6)));
+    const hostDb = `merge-host-${suffix}`;
+    const guestDb = `merge-guest-${suffix}`;
+
+    const host: WebIdentity = await on(hostDb, async () => {
+      const id = await bootstrapVault("Host Mac");
+      await store.ensureLocalDevice(id);
+      await store.setSyncState("relay_url", RELAY_URL!);
+      return id;
+    });
+    const hostCtx: SyncContext = { identity: host, relay };
+    await on(hostDb, () =>
+      store.saveNote(hostCtx.identity, {
+        id: crypto.randomUUID(),
+        title: "",
+        body: "# Host note\n\nlived in the vault first",
+        categoryId: null,
+      }),
+    );
+
+    // The guest is not a blank device: it has its own category, a live note, and
+    // a trashed one — the situation that used to be refused outright.
+    const guest = await on(guestDb, async () => {
+      const id = await bootstrapVault("Guest Browser");
+      await store.ensureLocalDevice(id);
+      return id;
+    });
+    const guestCtx: SyncContext = { identity: guest, relay: new RelayClient(RELAY_URL!) };
+    const carriedNoteId = crypto.randomUUID();
+    const trashedNoteId = crypto.randomUUID();
+    await on(guestDb, async () => {
+      const category = await store.createCategory(guestCtx.identity, "Guest Only");
+      await store.saveNote(guestCtx.identity, {
+        id: carriedNoteId,
+        title: "",
+        body: "# Guest note\n\nwritten before pairing 📝",
+        categoryId: category.id,
+      });
+      await store.saveNote(guestCtx.identity, {
+        id: trashedNoteId,
+        title: "",
+        body: "# Guest trash\n\nalready in the bin",
+        categoryId: null,
+      });
+      await store.trashNote(guestCtx.identity, trashedNoteId);
+    });
+
+    const offer = await on(hostDb, () => hostStartPairing(hostCtx, RELAY_URL!));
+    await on(guestDb, () => guestAcceptPairing(guestCtx, offer.code));
+    await on(hostDb, () => hostCompletePairing(hostCtx, offer.code));
+    const finished = await on(guestDb, () => guestFinishPairing(guestCtx, offer.code));
+    expect(finished.ready).toBe(true);
+    expect(finished.message).toContain("2 notes from this device merged in");
+
+    // The guest kept its own notes AND received the host's.
+    const guestNotes = await on(guestDb, () => store.listNotes("all", ""));
+    expect(guestNotes.map((n) => n.preview).join("\n")).toContain("written before pairing 📝");
+    expect(guestNotes.map((n) => n.preview).join("\n")).toContain("lived in the vault first");
+    expect(await on(guestDb, () => store.listCategories())).toHaveLength(1);
+
+    // A trashed note stays trashed rather than being resurrected by the merge.
+    const trash = await on(guestDb, () => store.listNotes("trash", ""));
+    expect(trash).toHaveLength(1);
+    expect(trash[0].id).toBe(trashedNoteId);
+
+    // The pre-pairing notebook is recoverable regardless.
+    const archives = await on(guestDb, () => store.listArchives());
+    expect(archives).toHaveLength(1);
+    expect(archives[0].snapshot.notes).toHaveLength(2);
+
+    // ...and the carried notes reach the rest of the vault over the relay.
+    await on(guestDb, () => runSyncCycle(guestCtx));
+    await on(hostDb, () => runSyncCycle(hostCtx));
+    const onHost = await on(hostDb, () => store.getNote(carriedNoteId));
+    expect(onHost?.body).toContain("written before pairing 📝");
+    expect(await on(hostDb, () => store.listCategories())).toHaveLength(1);
+    expect(await on(hostDb, () => store.openConflictCount())).toBe(0);
+  }, 30000);
 });

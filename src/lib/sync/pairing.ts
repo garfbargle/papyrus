@@ -26,12 +26,16 @@ import { gunzip, gzip } from "./gzip.js";
 import type { DeviceAuthorization } from "./operations.js";
 import { RelayClient } from "./relay.js";
 import {
+  archiveNotebook,
+  collectLocalNotebook,
   enqueueOperation,
   exportSnapshot,
   importSnapshot,
   registerAuthorizedDevice,
+  replayNotebook,
   setSyncState,
   type NotebookSnapshot,
+  type ReplayCounts,
 } from "./store.js";
 
 const CODE_PREFIX = "papyrus-pair-v1:";
@@ -167,6 +171,12 @@ export async function guestFinishPairing(ctx: SyncContext, rawCode: string): Pro
   const compressed = openPairingPayload(ctx.identity, sealed, utf8(code.secret));
   const snapshot = JSON.parse(new TextDecoder().decode(await gunzip(compressed))) as NotebookSnapshot;
 
+  // Pairing merges rather than replaces: hold on to this device's notebook,
+  // adopt the vault, then replay what we held into it so the other devices
+  // receive it too. The archive is the safety net if we fail in between.
+  const carried = await collectLocalNotebook();
+  await archiveNotebook(ctx.identity, "Before pairing with an existing notebook");
+
   await importSnapshot(snapshot, ctx.identity.deviceId);
   const adopted = adoptVault(
     ctx.identity,
@@ -176,6 +186,15 @@ export async function guestFinishPairing(ctx: SyncContext, rawCode: string): Pro
   );
   await saveIdentity(adopted);
   ctx.identity = adopted;
+
+  // Replay under the adopted identity — the operations have to be sealed with
+  // the new vault key and addressed to the new vault's devices.
+  const merged = await replayNotebook(adopted, carried);
   await setSyncState("relay_url", code.relayUrl);
-  return { ready: true, message: "Notebook paired and ready." };
+  return { ready: true, message: pairedMessage(merged) };
+}
+
+function pairedMessage({ notes }: ReplayCounts): string {
+  if (notes === 0) return "Notebook paired and ready.";
+  return `Notebook paired. ${notes} note${notes === 1 ? "" : "s"} from this device merged in.`;
 }

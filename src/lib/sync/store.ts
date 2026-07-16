@@ -1132,8 +1132,10 @@ function rawEntityId(prefixed: string): string {
   return index === -1 ? prefixed : prefixed.slice(index + 1);
 }
 
-// Replace the local notebook with a paired snapshot (mirrors `import_snapshot`).
-// Requires this device to be authorized in the snapshot. Wipes local state.
+// Install a paired snapshot as the local notebook (mirrors `import_snapshot`).
+// Requires this device to be authorized in the snapshot. This clears the stores
+// it owns, so anything local worth keeping must be collected first
+// (`collectLocalNotebook`) and replayed after (`replayNotebook`).
 export async function importSnapshot(snapshot: NotebookSnapshot, selfDeviceId: string): Promise<void> {
   if (snapshot.version !== 1) throw new Error("Unsupported notebook snapshot version.");
   const authorized = snapshot.devices.some((d) => d.id === selfDeviceId && !d.revokedAt);
@@ -1225,4 +1227,88 @@ export async function importSnapshot(snapshot: NotebookSnapshot, selfDeviceId: s
       } satisfies ConflictRecord);
     }
   });
+}
+
+// --- Pairing archive + merge --------------------------------------------------
+
+export interface CarriedNotebook {
+  notes: NoteRecord[];
+  categories: CategoryRecord[];
+}
+
+export interface ArchiveRecord {
+  id: string;
+  createdAt: string;
+  reason: string;
+  snapshot: NotebookSnapshot;
+}
+
+export interface ReplayCounts {
+  notes: number;
+  categories: number;
+}
+
+// The working copies this device owns before it adopts another vault. Trashed
+// notes come along too — they belong to the user just as much, and `deletedAt`
+// rides through the replay so they land back in the trash.
+export async function collectLocalNotebook(): Promise<CarriedNotebook> {
+  const [notes, categories] = await Promise.all([
+    idbGetAll<NoteRecord>("notes"),
+    idbGetAll<CategoryRecord>("categories"),
+  ]);
+  return { notes, categories };
+}
+
+// A full pre-pairing copy, written to a store `importSnapshot` does not clear, so
+// a merge that fails halfway leaves the old notebook recoverable.
+export async function archiveNotebook(identity: WebIdentity, reason: string): Promise<string> {
+  const record: ArchiveRecord = {
+    id: makeId(),
+    createdAt: now(),
+    reason,
+    snapshot: await exportSnapshot(identity),
+  };
+  await idbPut("archives", record);
+  return record.id;
+}
+
+export async function listArchives(): Promise<ArchiveRecord[]> {
+  const archives = await idbGetAll<ArchiveRecord>("archives");
+  return archives.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+// Re-record a carried notebook as fresh root revisions under the adopted vault,
+// which also enqueues them for the vault's other devices.
+//
+// The carried revision ancestry is deliberately dropped: it only ever existed on
+// this device, so no peer could resolve it — `applyRemoteNote` rejects a revision
+// whose parent it has never seen. A root revision (no parent) applies cleanly on
+// every device instead. Entity ids are UUIDs, so they cannot collide with the
+// adopted vault's own notes; an id that somehow does already exist is left alone
+// rather than forked into a conflict.
+export async function replayNotebook(
+  identity: WebIdentity,
+  carried: CarriedNotebook,
+): Promise<ReplayCounts> {
+  const existingCategories = await idbGetAll<CategoryRecord>("categories");
+  const takenCategoryIds = new Set(existingCategories.map((c) => c.id));
+  const positionOffset = existingCategories.reduce((max, c) => Math.max(max, c.position), -1) + 1;
+  const counts: ReplayCounts = { notes: 0, categories: 0 };
+
+  const carriedCategories = carried.categories.filter((c) => !takenCategoryIds.has(c.id));
+  for (const [index, category] of carriedCategories.entries()) {
+    await recordCategoryRevision(
+      identity,
+      { ...category, position: positionOffset + index, revisionId: makeId() },
+      null,
+    );
+    counts.categories += 1;
+  }
+
+  const takenNoteIds = new Set((await idbGetAll<NoteRecord>("notes")).map((n) => n.id));
+  for (const note of carried.notes.filter((n) => !takenNoteIds.has(n.id))) {
+    await recordNoteRevision(identity, { ...note, revisionId: makeId() }, null);
+    counts.notes += 1;
+  }
+  return counts;
 }

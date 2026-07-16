@@ -14,10 +14,11 @@ export type StoreName =
   | "outbox" // pending encrypted packages awaiting upload
   | "receipts" // applied package ids, for idempotent delivery
   | "tombstones" // entityId -> purge record, blocks resurrection
-  | "conflicts"; // entityId -> unresolved conflict record
+  | "conflicts" // entityId -> unresolved conflict record
+  | "archives"; // pre-pairing notebook copies, kept out of the pairing rewrite
 
 let DB_NAME = "papyrus-sync";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Test-only: point the layer at a different database (used to simulate multiple
 // independent devices in one process). Resets the cached connection.
@@ -42,6 +43,7 @@ const STORE_KEYS: Record<StoreName, string> = {
   receipts: "packageId",
   tombstones: "entityId",
   conflicts: "entityId",
+  archives: "id",
 };
 
 let dbPromise: Promise<IDBDatabase> | null = null;

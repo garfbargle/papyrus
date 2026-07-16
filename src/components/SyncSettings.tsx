@@ -188,6 +188,7 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
         {pairView === "join" && <>
           <span className="dialog-kicker">Pair this device</span><h2 id="pair-title">Bring your notebook here</h2>
           <p>Scan the one-time code shown on your other Papyrus device, or paste it below.</p>
+          <p className="pair-merge-note">Nothing is replaced: the notes already on this device join that notebook, and sync out to its other devices.</p>
           <button className="scan-button" disabled={busy} onClick={() => void scanCode()}><span className="scan-corners"><i /><i /><i /><i /></span><strong>Scan QR code</strong><small>Uses your camera only for this scan</small></button>
           <div className="pair-divider"><span>or paste the code</span></div>
           <textarea className="pair-code-input" rows={3} value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="papyrus-pair-v1:…" autoCapitalize="off" autoCorrect="off" spellCheck={false} />

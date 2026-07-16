@@ -176,7 +176,33 @@ fn migrate(connection: &Connection) -> Result<()> {
     if version < 3 {
         migrate_sync_schema(connection)?;
     }
+    let version: i64 = connection
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(error)?;
+    if version < 4 {
+        migrate_notebook_archives(connection)?;
+    }
     Ok(())
+}
+
+// Pre-pairing copies of the notebook. Deliberately outside every table
+// `import_snapshot` clears, so adopting another vault can never be the last
+// thing that happened to this device's notes.
+fn migrate_notebook_archives(connection: &Connection) -> Result<()> {
+    let transaction = connection.unchecked_transaction().map_err(error)?;
+    transaction
+        .execute_batch(
+            "CREATE TABLE notebook_archives (
+               id TEXT PRIMARY KEY, created_at TEXT NOT NULL, reason TEXT NOT NULL, snapshot TEXT NOT NULL
+             );
+             INSERT INTO schema_migrations(version, applied_at) VALUES (4, datetime('now'));",
+        )
+        .map_err(error)?;
+    transaction.commit().map_err(error)
 }
 
 fn migrate_categories_for_sync(connection: &Connection) -> Result<()> {
@@ -1900,12 +1926,169 @@ fn build_snapshot(
     })
 }
 
+// --- Pairing archive + merge --------------------------------------------------
+
+struct CarriedCategory {
+    category: Category,
+    deleted_at: Option<String>,
+}
+
+struct CarriedNotebook {
+    notes: Vec<Note>,
+    categories: Vec<CarriedCategory>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplayCounts {
+    notes: usize,
+    categories: usize,
+}
+
+// The working copies this device owns before it adopts another vault. Trashed
+// notes come along too — they belong to the user just as much, and `deleted_at`
+// rides through the replay so they land back in the trash.
+fn collect_local_notebook(connection: &Connection) -> Result<CarriedNotebook> {
+    let mut statement = connection.prepare(
+        "SELECT n.id, n.title, n.body, n.category_id, c.name, n.created_at, n.updated_at, n.deleted_at, n.revision_id
+         FROM notes n LEFT JOIN categories c ON c.id = n.category_id",
+    ).map_err(error)?;
+    let notes = statement
+        .query_map([], note_from_row)
+        .map_err(error)?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(error)?;
+    drop(statement);
+    let mut statement = connection
+        .prepare(
+            "SELECT id, name, position, created_at, updated_at, deleted_at FROM categories ORDER BY position",
+        )
+        .map_err(error)?;
+    let categories = statement
+        .query_map([], |row| {
+            Ok(CarriedCategory {
+                category: Category {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    position: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                },
+                deleted_at: row.get(5)?,
+            })
+        })
+        .map_err(error)?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(error)?;
+    drop(statement);
+    Ok(CarriedNotebook { notes, categories })
+}
+
+// A full pre-pairing copy, written to a table `import_snapshot` does not clear,
+// so a merge that fails halfway leaves the old notebook recoverable.
+fn archive_notebook(
+    connection: &Connection,
+    identity: &sync::SyncIdentity,
+    reason: &str,
+) -> Result<String> {
+    let snapshot = serde_json::to_string(&build_snapshot(connection, identity)?)
+        .map_err(|_| "Could not archive this device's notebook.".to_string())?;
+    let id = make_id();
+    connection
+        .execute(
+            "INSERT INTO notebook_archives(id, created_at, reason, snapshot) VALUES (?1, ?2, ?3, ?4)",
+            params![id, now(), reason, snapshot],
+        )
+        .map_err(error)?;
+    Ok(id)
+}
+
+// Re-record a carried notebook as fresh root revisions under the adopted vault,
+// which also enqueues them for the vault's other devices.
+//
+// The carried revision ancestry is deliberately dropped: it only ever existed on
+// this device, so no peer could resolve it — `apply_remote_note` rejects a
+// revision whose parent it has never seen. A root revision (no parent) applies
+// cleanly on every device instead. Entity ids are UUIDs, so they cannot collide
+// with the adopted vault's own notes; an id that somehow does already exist is
+// left alone rather than forked into a conflict.
+fn replay_notebook(
+    connection: &Connection,
+    identity: &sync::SyncIdentity,
+    carried: CarriedNotebook,
+) -> Result<ReplayCounts> {
+    let transaction = connection.unchecked_transaction().map_err(error)?;
+    let position_offset: i64 = transaction
+        .query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM categories",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(error)?;
+    let mut counts = ReplayCounts {
+        notes: 0,
+        categories: 0,
+    };
+    for (index, carried_category) in carried.categories.into_iter().enumerate() {
+        let CarriedCategory {
+            category,
+            deleted_at,
+        } = carried_category;
+        if entity_exists(&transaction, "categories", &category.id)? {
+            continue;
+        }
+        let category = Category {
+            position: position_offset + index as i64,
+            ..category
+        };
+        let revision_id = make_id();
+        transaction.execute(
+            "INSERT INTO categories(id, name, position, created_at, updated_at, deleted_at, revision_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![category.id, category.name, category.position, category.created_at, category.updated_at, deleted_at, revision_id],
+        ).map_err(error)?;
+        record_category_revision(&transaction, identity, &category, None, deleted_at, revision_id)?;
+        counts.categories += 1;
+    }
+    for note in carried.notes {
+        if entity_exists(&transaction, "notes", &note.id)? {
+            continue;
+        }
+        let note = Note {
+            revision_id: make_id(),
+            ..note
+        };
+        transaction.execute(
+            "INSERT INTO notes(id, title, body, category_id, created_at, updated_at, deleted_at, revision_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![note.id, note.title, note.body, note.category_id, note.created_at, note.updated_at, note.deleted_at, note.revision_id],
+        ).map_err(error)?;
+        record_revision(&transaction, identity, &note, None, None)?;
+        reindex_note(&transaction, &note.id)?;
+        counts.notes += 1;
+    }
+    transaction.commit().map_err(error)?;
+    Ok(counts)
+}
+
+fn entity_exists(connection: &Connection, table: &str, id: &str) -> Result<bool> {
+    let found: Option<i64> = connection
+        .query_row(
+            &format!("SELECT 1 FROM {table} WHERE id = ?1"),
+            [id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(error)?;
+    Ok(found.is_some())
+}
+
 fn import_snapshot(
     connection: &Connection,
     identity: &mut sync::SyncIdentity,
     snapshot: NotebookSnapshot,
     relay_url: &str,
-) -> Result<()> {
+) -> Result<ReplayCounts> {
     if snapshot.version != 1 {
         return Err("This notebook snapshot uses a newer Papyrus version.".into());
     }
@@ -1929,6 +2112,15 @@ fn import_snapshot(
         snapshot.vault_key_epoch,
         vault_key,
     )?;
+
+    // Pairing merges rather than replaces: hold on to this device's notebook and
+    // archive it before the rewrite below, then replay what we held once the
+    // vault is adopted. Both happen outside that transaction — the archive has to
+    // be durable even if the import fails, and the replay has to seal its
+    // operations with the adopted vault key.
+    let carried = collect_local_notebook(connection)?;
+    archive_notebook(connection, identity, "Before pairing with an existing notebook")?;
+
     let transaction = connection.unchecked_transaction().map_err(error)?;
     transaction.execute_batch(
         "DELETE FROM notes_fts; DELETE FROM notes; DELETE FROM categories; DELETE FROM note_revisions;
@@ -1990,7 +2182,7 @@ fn import_snapshot(
         .map_err(error)?;
     transaction.commit().map_err(error)?;
     *identity = adopted;
-    Ok(())
+    replay_notebook(connection, identity, carried)
 }
 
 fn pending_outbox(connection: &Connection) -> Result<Vec<PendingOutbox>> {
@@ -2714,22 +2906,6 @@ fn accept_pairing(code: String, state: State<'_, AppState>) -> Result<PairingPro
         .lock()
         .map_err(|_| "Sync identity is busy".to_string())?
         .clone();
-    {
-        let connection = state
-            .db
-            .lock()
-            .map_err(|_| "Notebook is busy".to_string())?;
-        let content_count: i64 = connection
-            .query_row(
-                "SELECT (SELECT COUNT(*) FROM notes) + (SELECT COUNT(*) FROM categories)",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(error)?;
-        if content_count > 0 {
-            return Err("Pairing replaces this device's empty notebook. Export or remove its local notes first.".into());
-        }
-    }
     let payload = PairingHelloRequest {
         session_id: pairing.session_id.clone(),
         secret: pairing.secret.clone(),
@@ -2933,11 +3109,19 @@ fn finish_pairing(code: String, state: State<'_, AppState>) -> Result<PairingPro
         .identity
         .lock()
         .map_err(|_| "Sync identity is busy".to_string())?;
-    import_snapshot(&connection, &mut identity, snapshot, &pairing.relay_url)?;
+    let merged = import_snapshot(&connection, &mut identity, snapshot, &pairing.relay_url)?;
     Ok(PairingProgress {
         ready: true,
-        message: "Notebook paired and ready".into(),
+        message: paired_message(merged),
     })
+}
+
+fn paired_message(merged: ReplayCounts) -> String {
+    match merged.notes {
+        0 => "Notebook paired and ready".into(),
+        1 => "Notebook paired. 1 note from this device merged in.".into(),
+        count => format!("Notebook paired. {count} notes from this device merged in."),
+    }
 }
 
 #[tauri::command]
@@ -3122,6 +3306,144 @@ mod tests {
         reindex_note(connection, &note.id).unwrap();
     }
 
+    // A snapshot for a vault this device does not belong to yet, authorizing the
+    // local device and one peer — what a host seals during pairing.
+    fn host_snapshot(local: &sync::SyncIdentity, peer: &sync::SyncIdentity) -> NotebookSnapshot {
+        let device = |identity: &sync::SyncIdentity| SnapshotDevice {
+            id: identity.device_id.clone(),
+            display_name: identity.device_name.clone(),
+            signing_key: URL_SAFE_NO_PAD.encode(identity.signing_public_key()),
+            agreement_key: URL_SAFE_NO_PAD.encode(identity.agreement_public_key()),
+            created_at: now(),
+            authorized_at: now(),
+            revoked_at: None,
+            last_seen_at: None,
+        };
+        NotebookSnapshot {
+            version: 1,
+            vault_id: "vault-host".into(),
+            vault_key_epoch: 1,
+            vault_key: URL_SAFE_NO_PAD.encode([9u8; 32]),
+            notes: vec![Note {
+                id: "host-note".into(),
+                title: "Host".into(),
+                body: "# Host\n\nlived in the vault first".into(),
+                category_id: None,
+                category_name: None,
+                created_at: now(),
+                updated_at: now(),
+                deleted_at: None,
+                revision_id: "host-rev".into(),
+            }],
+            categories: vec![SnapshotCategory {
+                id: "host-cat".into(),
+                name: "Personal".into(),
+                position: 0,
+                created_at: now(),
+                updated_at: now(),
+                deleted_at: None,
+                revision_id: "host-cat-rev".into(),
+            }],
+            note_revisions: vec![SnapshotNoteRevision {
+                id: "host-rev".into(),
+                note_id: "host-note".into(),
+                parent_revision_id: None,
+                device_id: peer.device_id.clone(),
+                created_at: now(),
+                note_created_at: now(),
+                updated_at: now(),
+                content_hash: sync::content_hash("Host", "# Host\n\nlived in the vault first", None, None),
+                title: "Host".into(),
+                body: "# Host\n\nlived in the vault first".into(),
+                category_id: None,
+                deleted_at: None,
+                purged_at: None,
+            }],
+            category_revisions: vec![],
+            devices: vec![device(local), device(peer)],
+            heads: vec![SnapshotHead {
+                entity_type: "note".into(),
+                entity_id: "host-note".into(),
+                revision_id: "host-rev".into(),
+            }],
+            tombstones: vec![],
+            conflicts: vec![],
+        }
+    }
+
+    #[test]
+    fn pairing_merges_this_devices_notebook_into_the_adopted_vault() {
+        let (connection, mut local, peer) = notebook();
+        insert_local_note(
+            &connection,
+            &local,
+            &note_state("local-note", "local-rev", None, "# Mine\n\nwritten before pairing"),
+        );
+        connection.execute(
+            "INSERT INTO categories(id, name, position, created_at, updated_at, deleted_at, revision_id)
+             VALUES ('local-cat', 'Personal', 0, ?1, ?1, NULL, 'local-cat-rev')",
+            params![now()],
+        ).unwrap();
+
+        let snapshot = host_snapshot(&local, &peer);
+        let merged =
+            import_snapshot(&connection, &mut local, snapshot, "https://relay.example").unwrap();
+
+        assert_eq!(merged.notes, 1);
+        assert_eq!(merged.categories, 1);
+        assert_eq!(local.vault_id, "vault-host");
+
+        // Both notebooks are present: nothing was replaced.
+        let mut bodies: Vec<String> = connection
+            .prepare("SELECT body FROM notes ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
+        bodies.sort();
+        assert_eq!(bodies.len(), 2);
+        assert!(bodies.iter().any(|body| body.contains("written before pairing")));
+        assert!(bodies.iter().any(|body| body.contains("lived in the vault first")));
+
+        // Same-named categories both survive, and the carried one is repositioned
+        // after the adopted vault's own.
+        let position: i64 = connection
+            .query_row("SELECT position FROM categories WHERE id = 'local-cat'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(position, 1);
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM categories WHERE name = 'Personal'", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+
+        // The carried note is replayed as a root revision — a peer that never saw
+        // its old ancestry can still apply it — and is queued for that peer.
+        let parent: Option<String> = connection
+            .query_row(
+                "SELECT r.parent_revision_id FROM note_revisions r
+                 JOIN entity_heads h ON h.revision_id = r.id
+                 WHERE h.entity_type = 'note' AND h.entity_id = 'local-note'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(parent, None);
+        let queued: i64 = connection
+            .query_row("SELECT COUNT(*) FROM sync_outbox WHERE state = 'pending'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(queued, 2);
+
+        // ...and the pre-pairing notebook is archived either way.
+        let archived: String = connection
+            .query_row("SELECT snapshot FROM notebook_archives", [], |row| row.get(0))
+            .unwrap();
+        assert!(archived.contains("written before pairing"));
+        assert!(!archived.contains("lived in the vault first"));
+    }
+
     #[test]
     fn existing_v1_notebook_migrates_without_losing_notes() {
         let connection = Connection::open_in_memory().unwrap();
@@ -3159,7 +3481,7 @@ mod tests {
                     0
                 ))
                 .unwrap(),
-            3
+            4
         );
         assert!(connection.prepare("SELECT * FROM sync_outbox").is_ok());
     }

@@ -1,6 +1,17 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as invokeCommand } from "@tauri-apps/api/core";
 import type { Category, Note, NoteConflict, NoteListItem, PairingOffer, PairingProgress, SavePayload, SyncStatus } from "../types";
 import * as webSync from "./sync";
+
+// Tauri commands reject with a bare string, because the native error type is
+// `Result<T, String>`. Callers test `error instanceof Error` and fall back to a
+// generic message when it fails, which silently discards every message the
+// native side wrote. Rewrap so the real reason survives the boundary.
+function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return invokeCommand<T>(command, args).catch((error: unknown) => {
+    if (error instanceof Error) throw error;
+    throw new Error(typeof error === "string" ? error : JSON.stringify(error));
+  });
+}
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 const preferencesKey = "papyrus-browser-preferences-v1";
