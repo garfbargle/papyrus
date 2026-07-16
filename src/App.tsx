@@ -8,6 +8,7 @@ import { api } from "./lib/api";
 import { newId } from "./lib/ids";
 import { readImageFile } from "./lib/images";
 import { noteTitle, relativeTime, titleFromMarkdown } from "./lib/format";
+import { seedWelcomeNotes } from "./lib/welcome";
 import type { Category, Note, NoteConflict, NoteListItem, SyncStatus } from "./types";
 
 type NoteView = "notes" | "trash";
@@ -137,12 +138,17 @@ function App() {
     (async () => {
       try {
         await api.initialize();
+        // A first-run notebook gets the welcome tour, opened to its first note.
+        // It is a nicety, so a notebook that opens fine but cannot be seeded is
+        // still a notebook: fall through to the usual empty state.
+        const welcomeNoteId = await seedWelcomeNotes().catch(() => null);
         const [loadedCategories, loadedNotes, savedTheme, savedFont, savedMode, loadedSyncStatus] = await Promise.all([api.listCategories(), api.listNotes("all"), api.getSetting("theme"), api.getSetting("font"), api.getSetting("listMode"), api.getSyncStatus()]);
         setCategories(loadedCategories); setNotes(loadedNotes);
         setSyncStatus(loadedSyncStatus);
         if (themes.some((item) => item.id === savedTheme)) setTheme(savedTheme as ThemeId);
         if (fonts.some((item) => item.id === savedFont)) setFont(savedFont as FontId);
         if (savedMode === "all" || savedMode === "folders") setMode(savedMode);
+        if (welcomeNoteId) await openNote(welcomeNoteId);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Papyrus could not open the notebook.");
       } finally { setLoading(false); }
