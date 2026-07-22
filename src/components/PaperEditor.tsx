@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { renderMarkdown } from "../lib/markdown";
 import { imageFilesFrom, readImageFile } from "../lib/images";
 
@@ -107,6 +107,17 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
     return () => { document.removeEventListener("mousedown", dismiss); document.removeEventListener("keydown", escape); };
   }, [menu]);
 
+  // Keep the menu on-screen: opened at the tap point it can run off the right or
+  // bottom edge (badly, on a narrow phone). Measure it and nudge it back inside.
+  useLayoutEffect(() => {
+    if (!menu || !menuElement.current) return;
+    const rect = menuElement.current.getBoundingClientRect();
+    const margin = 8;
+    const left = Math.max(margin, Math.min(menu.left, window.innerWidth - rect.width - margin));
+    const top = Math.max(margin, Math.min(menu.top, window.innerHeight - rect.height - margin));
+    if (Math.abs(left - menu.left) > 0.5 || Math.abs(top - menu.top) > 0.5) setMenu({ left, top });
+  }, [menu]);
+
   const commit = () => {
     if (!paper.current) return;
     const markdown = markdownFromPaper(paper.current);
@@ -160,6 +171,97 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
     return block;
   };
 
+  // Every leaf block the current selection touches, in document order. A collapsed
+  // caret yields the single block it sits in; a range spanning several lines yields
+  // them all — which is what lets one "Checklist" tap convert a whole list.
+  const selectedBlocks = (): HTMLElement[] => {
+    const selection = window.getSelection();
+    if (!paper.current || !selection?.rangeCount) {
+      const single = selectedBlock();
+      return single ? [single] : [];
+    }
+    const range = selection.getRangeAt(0);
+    const all = Array.from(paper.current.querySelectorAll<HTMLElement>(blockSelector)).filter((block) => range.intersectsNode(block));
+    // Drop container blocks (e.g. a blockquote wrapping selected paragraphs) so we
+    // only act on the leaves and never convert the same text twice.
+    const leaves = all.filter((block) => !all.some((other) => other !== block && block.contains(other)));
+    if (leaves.length) return leaves;
+    const single = selectedBlock();
+    return single ? [single] : [];
+  };
+
+  const ensureCheckbox = (item: HTMLElement, checked = false) => {
+    let check = item.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]');
+    if (!check) {
+      check = document.createElement("input"); check.type = "checkbox"; check.contentEditable = "false";
+      item.insertBefore(check, item.firstChild);
+    }
+    check.checked = checked || check.checked;
+    item.classList.add("task-list-item");
+  };
+
+  // Build a checklist <li> from any block, carrying its inline content (bold, links,
+  // etc.) across rather than flattening to plain text.
+  const buildTaskItem = (block: HTMLElement): HTMLLIElement => {
+    const item = document.createElement("li"); item.className = "task-list-item";
+    const check = document.createElement("input"); check.type = "checkbox"; check.contentEditable = "false";
+    const existing = block.querySelector<HTMLInputElement>(':scope > input[type="checkbox"]');
+    check.checked = existing?.checked ?? false;
+    item.append(check);
+    const content = Array.from(block.childNodes).filter((node) => !(node instanceof HTMLInputElement && node.type === "checkbox"));
+    if (content.some((node) => (node.textContent || "").trim())) content.forEach((node) => item.append(node));
+    else item.append(document.createTextNode("\uFEFF"));
+    return item;
+  };
+
+  // Merge runs of adjacent top-level <ul> siblings so converting several paragraphs
+  // yields one checklist rather than a stack of single-item lists.
+  const mergeAdjacentLists = (root: HTMLElement) => {
+    let child = root.firstElementChild;
+    while (child) {
+      const next = child.nextElementSibling;
+      if (child.tagName === "UL" && next?.tagName === "UL") {
+        while (next.firstChild) child.append(next.firstChild);
+        next.remove();
+        continue;
+      }
+      child = next;
+    }
+  };
+
+  // Returns the task items this block produced, so the caller can land the caret
+  // on the real conversion rather than hunting for the last checklist in the note.
+  const convertBlockToTask = (block: HTMLElement, processedLists: Set<HTMLElement>): HTMLElement[] => {
+    const parent = block.parentElement;
+    if (block.tagName === "LI" && parent?.tagName === "UL") { ensureCheckbox(block); return [block]; }
+    if (block.tagName === "LI" && parent?.tagName === "OL") {
+      // A numbered list can't carry checkboxes in Markdown, so convert the whole
+      // list to a bulleted checklist (once, however many of its items were caught).
+      if (processedLists.has(parent)) return [];
+      processedLists.add(parent);
+      const list = document.createElement("ul");
+      const items = Array.from(parent.children).filter((child) => child.tagName === "LI") as HTMLElement[];
+      items.forEach((item) => { ensureCheckbox(item); list.append(item); });
+      parent.replaceWith(list);
+      return items;
+    }
+    const list = document.createElement("ul");
+    const item = buildTaskItem(block);
+    list.append(item);
+    block.replaceWith(list);
+    return [item];
+  };
+
+  const applyChecklist = () => {
+    const blocks = selectedBlocks();
+    if (!blocks.length || !paper.current) return;
+    const processedLists = new Set<HTMLElement>();
+    const converted = blocks.flatMap((block) => convertBlockToTask(block, processedLists));
+    mergeAdjacentLists(paper.current);
+    const last = converted[converted.length - 1];
+    if (last?.isConnected) placeCaretAtEnd(last);
+  };
+
   const promoteToChecklist = (block: HTMLElement, text: string, checked = false) => {
     const check = document.createElement("input"); check.type = "checkbox"; check.checked = checked; check.contentEditable = "false";
     // A zero-width cursor host keeps the caret visibly after a fresh checkbox.
@@ -176,14 +278,38 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
     item.append(check, taskText); list.append(item); block.replaceWith(list); placeCaretInText(taskText);
   };
 
-  const replaceWithChecklist = () => {
-    const block = selectedBlock();
-    if (block) promoteToChecklist(block, block.textContent || "");
+  // Copy/Cut/Paste live in the paper menu because long-press hands us a context
+  // menu instead of the browser's native selection toolbar — without these there
+  // is no way to copy from the note on a touch device.
+  const runClipboard = async (command: "cut" | "copy" | "paste" | "selectall") => {
+    if (!paper.current) return;
+    if (command === "selectall") {
+      const range = document.createRange(); range.selectNodeContents(paper.current);
+      const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
+      return;
+    }
+    if (command === "paste") {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text) document.execCommand("insertText", false, text);
+      } catch { onNotice?.("Pasting isn't available here — try a long-press paste."); }
+      requestAnimationFrame(commit);
+      return;
+    }
+    try { document.execCommand(command); } catch { onNotice?.(command === "cut" ? "Couldn't cut that selection." : "Couldn't copy that selection."); }
+    if (command === "cut") requestAnimationFrame(commit);
   };
 
-  const useCommand = async (command: "p" | "h1" | "h2" | "h3" | "bold" | "italic" | "link" | "code" | "bullets" | "numbers" | "checklist" | "image") => {
+  type Command = "p" | "h1" | "h2" | "h3" | "bold" | "italic" | "link" | "code" | "bullets" | "numbers" | "checklist" | "image" | "cut" | "copy" | "paste" | "selectall";
+
+  const useCommand = async (command: Command) => {
     restoreSelection(); paper.current?.focus();
-    if (command === "checklist") replaceWithChecklist();
+    if (command === "cut" || command === "copy" || command === "paste" || command === "selectall") {
+      await runClipboard(command);
+      if (command !== "selectall") setMenu(null);
+      return;
+    }
+    if (command === "checklist") applyChecklist();
     else if (command === "bullets") document.execCommand("insertUnorderedList");
     else if (command === "numbers") document.execCommand("insertOrderedList");
     else if (command === "bold" || command === "italic") document.execCommand(command);
@@ -288,17 +414,21 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
       onKeyDown={continueChecklist}
       onKeyUp={rememberSelection}
       onMouseUp={rememberSelection}
+      onPointerDown={(event) => {
+        // Ticking a checkbox shouldn't pull focus into the editable text — on a
+        // phone that pops the keyboard and drops the caret onto the tapped line
+        // (often the title). Suppressing pointerdown keeps focus and the caret put;
+        // the box still flips on click, which we persist below.
+        if ((event.target as HTMLElement).matches('input[type="checkbox"]')) event.preventDefault();
+      }}
       onClick={(event) => {
-        const target = event.target as HTMLElement;
-        if (!target.matches('input[type="checkbox"]')) return;
-        // Keep the caret on the toggled line instead of letting it drift to the title.
-        const item = target.closest<HTMLElement>("li");
-        if (item) placeCaretAtEnd(item);
+        if (!(event.target as HTMLElement).matches('input[type="checkbox"]')) return;
         window.setTimeout(commit, 0);
       }}
       onContextMenu={(event) => { event.preventDefault(); rememberSelection(); setMenu({ left: event.clientX, top: event.clientY }); }}
     />
     {menu && <div className="paper-menu" ref={menuElement} style={{ left: menu.left, top: menu.top }} onMouseDown={(event) => event.preventDefault()}>
+      <div className="paper-menu-section"><button onClick={() => void useCommand("cut")}>Cut</button><button onClick={() => void useCommand("copy")}>Copy</button><button onClick={() => void useCommand("paste")}>Paste</button><button onClick={() => void useCommand("selectall")}>Select all</button></div>
       <div className="paper-menu-section"><button onClick={() => void useCommand("p")}>Paragraph</button><button onClick={() => void useCommand("h1")}>Heading 1</button><button onClick={() => void useCommand("h2")}>Heading 2</button><button onClick={() => void useCommand("h3")}>Heading 3</button></div>
       <div className="paper-menu-section"><button onClick={() => void useCommand("checklist")}>Checklist</button><button onClick={() => void useCommand("bullets")}>Bulleted list</button><button onClick={() => void useCommand("numbers")}>Numbered list</button></div>
       <div className="paper-menu-section"><button onClick={() => void useCommand("bold")}><b>Bold</b></button><button onClick={() => void useCommand("italic")}><i>Italic</i></button><button onClick={() => void useCommand("link")}>Link…</button><button onClick={() => void useCommand("code")}>Code block</button><button onClick={() => void useCommand("image")}>Add image…</button></div>
