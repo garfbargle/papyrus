@@ -337,19 +337,19 @@ function App() {
 
   const trashCurrent = async () => {
     if (!current) return;
-    if (!current.body.trim()) { setCurrent(null); currentRef.current = null; return; }
-    await api.trashNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); await loadNotes(); scheduleSync();
+    if (!current.body.trim()) { setCurrent(null); currentRef.current = null; setMobileScreen("list"); return; }
+    await api.trashNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync();
     setNotice("Moved to Trash");
   };
 
   const restoreCurrent = async () => {
     if (!current) return;
-    await api.restoreNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); await loadNotes(); scheduleSync(); setNotice("Note restored");
+    await api.restoreNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Note restored");
   };
 
   const deleteCurrent = async () => {
     if (!current) return;
-    await api.deleteNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
+    await api.deleteNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
   };
 
   const duplicateCurrent = async () => {
@@ -362,19 +362,19 @@ function App() {
 
   const trashNoteId = async (id: string) => {
     setNoteMenu(null); await api.trashNote(id);
-    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; setNoteConflict(null); }
+    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; setNoteConflict(null); setMobileScreen("list"); }
     await loadNotes(); scheduleSync(); setNotice("Moved to Trash");
   };
 
   const restoreNoteId = async (id: string) => {
     setNoteMenu(null); await api.restoreNote(id);
-    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; }
+    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; setMobileScreen("list"); }
     await loadNotes(); scheduleSync(); setNotice("Note restored");
   };
 
   const deleteNoteId = async (id: string) => {
     setNoteMenu(null); await api.deleteNote(id);
-    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; }
+    if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; setMobileScreen("list"); }
     await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
   };
 
