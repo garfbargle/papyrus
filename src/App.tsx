@@ -211,6 +211,16 @@ function App() {
     return () => window.removeEventListener("mousedown", dismiss);
   }, [categoryMenu, noteMenu, overflow]);
 
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (deletingCategory) { setDeletingCategory(null); return; }
+      setCategoryMenu(null); setNoteMenu(null); setOverflow(false); setMoveMenu(false);
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [deletingCategory]);
+
   const persist = useCallback(async (note: Note) => {
     if (!note.body.trim()) return;
     const title = titleFromMarkdown(note.body);
@@ -446,14 +456,12 @@ function App() {
     </button>
   );
 
-  const flatMessage = searching ? "No notes match that search." : view === "trash" ? "Trash is empty." : "No notes yet. Tap New to begin.";
-
   return (
     <main className={`app ${railCollapsed ? "rail-collapsed" : ""} ${mobileScreen === "note" ? "show-note" : "show-list"}`}>
       <aside className="rail">
         <div className="rail-head">
           <div className="brand"><span>Papyrus</span></div>
-          <button className="new-note-button" onClick={createNote}><Icon name="plus" size={16} /><span>New</span></button>
+          <button className="new-note-button" onClick={createNote}><Icon name="plus" size={16} /><span>New note</span></button>
         </div>
 
         {view === "trash" ? <div className="trash-bar">
@@ -468,9 +476,9 @@ function App() {
         <label className="search"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" aria-label="Search notes" /><kbd>⌘ K</kbd></label>
 
         <div className="rail-list">
-          {loading ? <div className="list-message">Opening your notebook…</div>
+          {loading ? <ListSkeleton />
             : searching || view === "trash" || mode === "all"
-              ? (notes.length ? notes.map((note) => noteRow(note, "rich")) : <div className="list-message">{flatMessage}</div>)
+              ? (notes.length ? notes.map((note) => noteRow(note, "rich")) : <ListEmpty view={view} searching={searching} onCreate={createNote} onClearSearch={() => setSearch("")} />)
               : <>
                 {categories.map((category, index) => {
                   const items = notes.filter((note) => note.categoryId === category.id);
@@ -515,7 +523,7 @@ function App() {
       <section className="note-pane">
         {current ? <>
           <header className="note-header">
-            <button className="mobile-back icon-button" onClick={() => setMobileScreen("list")} aria-label="Back to notes"><Icon name="arrowLeft" /></button>
+            <button className="mobile-back icon-button" onClick={() => setMobileScreen("list")} aria-label="Back to notes"><Icon name="arrowLeft" /><span>Notes</span></button>
             <button className="icon-button editor-expand-toggle" onClick={() => setRailCollapsed((collapsed) => !collapsed)} aria-label={railCollapsed ? "Show notes list" : "Hide notes list"} title={railCollapsed ? "Show notes list" : "Focus editor"}><Icon name={railCollapsed ? "panelRight" : "panelLeft"} /></button>
             <div className="note-breadcrumb"><Icon name={currentCategory ? "folder" : "file"} size={15} /><span>{currentCategory?.name || "No folder"}</span></div>
             <div className="note-actions">
@@ -546,7 +554,7 @@ function App() {
       {settingsOpen && <Settings onClose={() => setSettingsOpen(false)} onExport={exportNotebook} theme={theme} onThemeChange={changeTheme} font={font} onFontChange={changeFont} syncStatus={syncStatus} onSyncStatusChange={setSyncStatus} onNotebookChanged={refreshNotebook} onNotice={setNotice} />}
       {reviewConflict && noteConflict && <ConflictReview conflict={noteConflict} onClose={() => setReviewConflict(false)} onResolve={(choice) => void resolveConflict(choice)} />}
       {deletingCategory && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeletingCategory(null); }}><div className="pair-dialog compact" role="alertdialog" aria-modal="true" aria-labelledby="delete-folder-title"><span className="dialog-kicker danger">Remove folder</span><h2 id="delete-folder-title">Remove {deletingCategory.name}?</h2><p>The notes inside stay in your notebook and move to “No folder.” This change syncs to your other devices.</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setDeletingCategory(null)}>Cancel</button><button className="danger-button" onClick={() => void deleteFolder()}>Remove Folder</button></div></div></div>}
-      {notice && <button className="toast" onClick={() => setNotice(null)}><Icon name="check" size={16} />{notice}</button>}
+      {notice && <button className="toast" onClick={() => setNotice(null)} role="status" aria-live="polite"><Icon name="check" size={16} />{notice}</button>}
     </main>
   );
 }
@@ -566,6 +574,24 @@ function ConflictReview({ conflict, onClose, onResolve }: { conflict: NoteConfli
 
 function EmptyNote({ onCreate }: { onCreate: () => void }) {
   return <div className="empty-note"><span className="paper-glyph">✦</span><h2>A quiet place for every thought.</h2><p>Notes are private, stored locally, and written in ordinary Markdown.</p><button className="primary-button" onClick={onCreate}><Icon name="plus" size={17} />New note</button></div>;
+}
+
+function ListSkeleton() {
+  return <div className="list-skeleton" role="status" aria-label="Opening your notebook">
+    <i /><i /><i />
+    <span>Opening your notebook…</span>
+  </div>;
+}
+
+function ListEmpty({ view, searching, onCreate, onClearSearch }: { view: NoteView; searching: boolean; onCreate: () => void; onClearSearch: () => void }) {
+  const isTrash = view === "trash";
+  const title = searching ? "No matching notes" : isTrash ? "Trash is empty" : "Start your notebook";
+  const message = searching ? "Try a different word, or clear the search to see every note." : isTrash ? "Notes you remove will stay here for 30 days." : "Capture an idea, a task, or the beginning of something larger.";
+  return <div className="list-empty">
+    <span className="list-empty-icon"><Icon name={searching ? "search" : isTrash ? "trash" : "file"} size={19} /></span>
+    <strong>{title}</strong><p>{message}</p>
+    {searching ? <button className="secondary-button" onClick={onClearSearch}>Clear search</button> : !isTrash && <button className="primary-button" onClick={onCreate}><Icon name="plus" size={16} />New note</button>}
+  </div>;
 }
 
 type SettingsProps = {

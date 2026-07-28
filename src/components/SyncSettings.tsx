@@ -27,6 +27,16 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
 
   useEffect(() => { if (status?.localDeviceName) setDeviceName(status.localDeviceName); }, [status?.localDeviceName]);
 
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (revoke) setRevoke(null);
+      else if (pairView) setPairView(null);
+    };
+    window.addEventListener("keydown", dismiss);
+    return () => window.removeEventListener("keydown", dismiss);
+  }, [pairView, revoke]);
+
   const refreshStatus = async () => {
     const next = await api.getSyncStatus();
     onStatusChange(next);
