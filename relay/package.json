@@ -8,7 +8,9 @@
     "dev:faults": "node scripts/fault-harness.mjs",
     "types": "wrangler types",
     "check": "npm run types && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "deploy": "npm run check && wrangler d1 migrations apply papyrus-sync-relay --remote && wrangler deploy",
+    "deploy:dry-run": "npm run check && wrangler deploy --dry-run"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.4",

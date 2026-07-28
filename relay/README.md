@@ -32,4 +32,11 @@ The Worker tests run in Cloudflare's local Workers runtime with real isolated D1
 
 ## Deployment
 
-Create a D1 database and R2 bucket, add their identifiers to `wrangler.jsonc`, apply the D1 migrations, and deploy. Build the native app with `PAPYRUS_SYNC_RELAY_URL` set to the deployed HTTPS Worker URL.
+Create a D1 database and R2 bucket, then add their identifiers to `wrangler.jsonc`. After authenticating with Cloudflare, deploy with:
+
+```sh
+npx wrangler login
+npm run deploy
+```
+
+The deploy command checks the Worker, applies any pending remote D1 migrations, and publishes it. Build the native app with `PAPYRUS_SYNC_RELAY_URL` set to the deployed HTTPS Worker URL.

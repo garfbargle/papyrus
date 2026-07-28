@@ -101,6 +101,15 @@ npx tauri build --bundles app
 # → src-tauri/target/release/bundle/macos/Papyrus.app
 ```
 
+Deploy the web app and sync relay (after authenticating with Cloudflare):
+
+```sh
+npx wrangler login
+npm run deploy          # web app → notes.c0di.com
+npm run deploy:relay    # applies D1 migrations, then deploys the relay
+npm run deploy:all      # relay, then web app
+```
+
 See [`relay/README.md`](relay/README.md) for failure simulation, testing, and deployment of the sync relay.
 
 ---

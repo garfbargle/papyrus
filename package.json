@@ -8,6 +8,10 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
+    "deploy:relay": "npm --prefix relay run deploy",
+    "deploy:all": "npm run deploy:relay && npm run deploy",
     "tauri": "tauri",
     "icons": "python3 scripts/round-full-icon.py Resources/app-icon.png -o app-icon.png && npm run tauri -- icon app-icon.png"
   },
@@ -39,6 +43,7 @@
     "fake-indexeddb": "^6.2.5",
     "typescript": "~5.7.3",
     "vite": "^6.1.0",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "wrangler": "^4.110.0"
   }
 }
