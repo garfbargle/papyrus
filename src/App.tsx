@@ -48,6 +48,9 @@ function placeLegacyTitleInBody(note: Note) {
 }
 
 function App() {
+  // Embed hosts can open straight into a blank composer with ?new=1. The note
+  // remains local-only until it has content, just like clicking “New note”.
+  const forceNewNote = new URLSearchParams(window.location.search).get("new") === "1";
   const [categories, setCategories] = useState<Category[]>([]);
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const [view, setView] = useState<NoteView>("notes");
@@ -148,7 +151,8 @@ function App() {
         if (themes.some((item) => item.id === savedTheme)) setTheme(savedTheme as ThemeId);
         if (fonts.some((item) => item.id === savedFont)) setFont(savedFont as FontId);
         if (savedMode === "all" || savedMode === "folders") setMode(savedMode);
-        if (welcomeNoteId) await openNote(welcomeNoteId);
+        if (forceNewNote) startNote(null);
+        else if (welcomeNoteId) await openNote(welcomeNoteId);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Papyrus could not open the notebook.");
       } finally { setLoading(false); }
