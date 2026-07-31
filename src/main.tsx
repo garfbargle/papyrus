@@ -10,7 +10,20 @@ import "./styles.css";
 // size everything from it. `dvh` is the CSS fallback until this first runs.
 function trackViewportHeight() {
   const root = document.documentElement;
-  const apply = () => root.style.setProperty("--app-height", `${window.innerHeight}px`);
+  const stickyPreference = new URLSearchParams(window.location.search).get("sticky");
+  const apply = () => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    root.style.setProperty("--app-height", `${height}px`);
+
+    // An embedded note often lives in a small square-ish panel, where the normal
+    // two-pane notebook is needlessly dense. Keep tall, phone-sized views in the
+    // regular mobile layout, but give genuinely tiny panels a focused sticky-note
+    // treatment. Hosts can explicitly opt in or out with ?sticky=1 / ?sticky=0.
+    const tinyPanel = width <= 480 && (height <= 540 || (width <= 360 && height <= 720));
+    const compact = stickyPreference === "1" || (stickyPreference !== "0" && tinyPanel);
+    root.dataset.compact = String(compact);
+  };
   apply();
   window.addEventListener("resize", apply);
   window.addEventListener("orientationchange", apply);
