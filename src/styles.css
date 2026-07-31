@@ -327,52 +327,29 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
 }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } }
 
-/* ===================== Compact sticky note =====================
-   Tiny embeds should feel like a single note placed on the page, rather than a
-   squeezed desktop app. The regular small-screen navigation remains intact:
-   the back button still opens the note list and the overflow menu retains the
-   less-frequent actions. main.tsx applies this only to compact viewports (or
-   when an embed explicitly uses ?sticky=1). */
-:root[data-compact="true"] {
-  color-scheme: light;
-  --paper: #fff6a8;
-  --paper-warm: #ffed87;
-  --paper-deep: #efd46c;
-  --ink: #51420f;
-  --muted: #806c24;
-  --soft: #af9840;
-  --line: rgba(91, 69, 12, .16);
-  --line-strong: rgba(91, 69, 12, .27);
-  --accent: #8f6714;
-  --accent-soft: rgba(255, 255, 255, .42);
-  --danger: #a3472d;
-  --shadow: 0 10px 22px rgba(91, 69, 12, .16);
+/* ===================== Compact note mode =====================
+   Tiny embeds behave like a focused sticky note: one note fills the panel and
+   the compact header takes you back to the note list. It deliberately inherits
+   the selected Papyrus theme rather than applying a separate colour treatment.
+   main.tsx enables it for compact viewports or ?sticky=1. */
+:root[data-compact="true"] .app,
+:root[data-compact="true"] .app.rail-collapsed {
+  display: block;
+  position: relative;
+  height: var(--app-height, 100dvh);
 }
-
-:root[data-compact="true"] .app {
-  background:
-    linear-gradient(132deg, rgba(255,255,255,.42), transparent 34%),
-    repeating-linear-gradient(0deg, transparent 0 27px, rgba(130, 103, 21, .08) 28px);
-}
+:root[data-compact="true"] .rail-collapsed .rail { display: flex; }
 :root[data-compact="true"] .rail,
 :root[data-compact="true"] .note-pane {
-  background:
-    linear-gradient(132deg, rgba(255,255,255,.42), transparent 34%),
-    repeating-linear-gradient(0deg, transparent 0 27px, rgba(130, 103, 21, .08) 28px);
-}
-:root[data-compact="true"] .note-pane::after {
-  content: "";
   position: absolute;
-  z-index: 3;
-  right: 0;
-  bottom: 0;
-  width: 34px;
-  height: 34px;
-  pointer-events: none;
-  background: linear-gradient(135deg, rgba(130, 103, 21, .22) 0 49%, #ffe982 50% 100%);
-  clip-path: polygon(100% 0, 100% 100%, 0 100%);
-  filter: drop-shadow(-2px -2px 2px rgba(91, 69, 12, .1));
+  inset: 0;
+  border: 0;
+  transition: transform .24s ease, opacity .2s ease;
 }
+:root[data-compact="true"] .rail { transform: translateX(-12%); opacity: 0; pointer-events: none; }
+:root[data-compact="true"] .note-pane { transform: translateX(12%); opacity: 0; pointer-events: none; }
+:root[data-compact="true"] .show-list .rail,
+:root[data-compact="true"] .show-note .note-pane { transform: none; opacity: 1; pointer-events: auto; z-index: 2; }
 :root[data-compact="true"] .rail-head {
   min-height: 48px;
   padding: 8px 10px 6px;
@@ -407,17 +384,20 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
   height: 46px;
   padding: 5px 8px;
   gap: 2px;
-  border-bottom: 1px dashed var(--line-strong);
-  background: rgba(255, 248, 176, .76);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--paper) 91%, transparent);
   backdrop-filter: blur(8px);
 }
 :root[data-compact="true"] .mobile-back {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
   width: 32px;
   padding: 0;
   justify-content: center;
 }
 :root[data-compact="true"] .mobile-back span { display: none; }
+:root[data-compact="true"] .editor-expand-toggle { display: none; }
 :root[data-compact="true"] .note-breadcrumb { padding-left: 3px; font-size: 10px; }
 :root[data-compact="true"] .note-breadcrumb svg { width: 13px; height: 13px; }
 :root[data-compact="true"] .note-actions .icon-button { width: 32px; height: 32px; }
