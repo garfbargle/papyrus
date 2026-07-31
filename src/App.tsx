@@ -92,6 +92,9 @@ function App() {
   // and event listeners can read it without being torn down on every status tick.
   const autoSyncEnabled = useRef(false);
   const currentRef = useRef<Note | null>(initialDraft.current);
+  // New notes are rendered before they exist in storage. Keep refreshes from
+  // treating that short-lived, local-only state as a deleted note.
+  const unsavedNoteIds = useRef(new Set(initialDraft.current ? [initialDraft.current.id] : []));
 
   const filter = view === "trash" ? "trash" : "all";
   const searching = search.trim().length > 0;
@@ -110,7 +113,7 @@ function App() {
       const [refreshed, conflict] = await Promise.all([api.getNote(openId), api.getNoteConflict(openId)]);
       setNoteConflict(conflict);
       if (refreshed) { const documentNote = placeLegacyTitleInBody(refreshed); currentRef.current = documentNote; setCurrent(documentNote); }
-      else { currentRef.current = null; setCurrent(null); setNoteConflict(null); setReviewConflict(false); }
+      else if (!unsavedNoteIds.current.has(openId)) { currentRef.current = null; setCurrent(null); setNoteConflict(null); setReviewConflict(false); }
     }
   }, [filter, search]);
 
@@ -230,6 +233,7 @@ function App() {
     const title = titleFromMarkdown(note.body);
     try {
       const saved = await api.saveNote({ id: note.id, title, body: note.body, categoryId: note.categoryId });
+      unsavedNoteIds.current.delete(note.id);
       if (currentRef.current?.id === note.id) {
         const combined = { ...note, ...saved, title, body: saved.body ?? note.body };
         currentRef.current = combined; setCurrent(combined);
@@ -263,6 +267,7 @@ function App() {
   const startNote = (categoryId: string | null) => {
     if (pendingSave.current) window.clearTimeout(pendingSave.current);
     const note = { ...freshNote(), categoryId };
+    unsavedNoteIds.current.add(note.id);
     currentRef.current = note; setCurrent(note); setNoteConflict(null); setReviewConflict(false); setOverflow(false); setNoteMenu(null); setMobileScreen("note"); setSourceMode(false);
     if (categoryId) { setActiveFolderId(categoryId); setExpanded((prev) => new Set(prev).add(categoryId)); }
     window.setTimeout(() => document.querySelector<HTMLElement>(".paper-editor")?.focus(), 50);
