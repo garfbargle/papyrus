@@ -51,6 +51,7 @@ function App() {
   // Embed hosts can open straight into a blank composer with ?new=1. The note
   // remains local-only until it has content, just like clicking “New note”.
   const forceNewNote = new URLSearchParams(window.location.search).get("new") === "1";
+  const initialDraft = useRef<Note | null>(forceNewNote ? freshNote() : null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const [view, setView] = useState<NoteView>("notes");
@@ -62,9 +63,9 @@ function App() {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [current, setCurrent] = useState<Note | null>(null);
+  const [current, setCurrent] = useState<Note | null>(() => initialDraft.current);
   const [sourceMode, setSourceMode] = useState(false);
-  const [mobileScreen, setMobileScreen] = useState<MobileScreen>("list");
+  const [mobileScreen, setMobileScreen] = useState<MobileScreen>(forceNewNote ? "note" : "list");
   const [loading, setLoading] = useState(true);
   const [newCategory, setNewCategory] = useState(false);
   const [categoryName, setCategoryName] = useState("");
@@ -90,7 +91,7 @@ function App() {
   // a cycle with no peers is a pure no-op. Mirror that into a ref so the timers
   // and event listeners can read it without being torn down on every status tick.
   const autoSyncEnabled = useRef(false);
-  const currentRef = useRef<Note | null>(null);
+  const currentRef = useRef<Note | null>(initialDraft.current);
 
   const filter = view === "trash" ? "trash" : "all";
   const searching = search.trim().length > 0;
@@ -151,8 +152,7 @@ function App() {
         if (themes.some((item) => item.id === savedTheme)) setTheme(savedTheme as ThemeId);
         if (fonts.some((item) => item.id === savedFont)) setFont(savedFont as FontId);
         if (savedMode === "all" || savedMode === "folders") setMode(savedMode);
-        if (forceNewNote) startNote(null);
-        else if (welcomeNoteId) await openNote(welcomeNoteId);
+        if (!forceNewNote && welcomeNoteId) await openNote(welcomeNoteId);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Papyrus could not open the notebook.");
       } finally { setLoading(false); }
