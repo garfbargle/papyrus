@@ -57,13 +57,23 @@ button { color: inherit; border: 0; cursor: pointer; touch-action: manipulation;
 button:disabled { cursor: not-allowed; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, [contenteditable="true"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* ===================== Layout ===================== */
-.app { display: grid; grid-template-columns: 322px minmax(0, 1fr); height: var(--app-height, 100dvh); overflow: hidden; background: var(--paper); }
+/* ===================== Layout =====================
+   The single row is pinned with minmax(0, 1fr) and the panes carry min-height: 0.
+   Without both, the row is auto-sized and grows with the note (a grid item's
+   automatic minimum is its content), so the panes end up taller than the window:
+   the editor is then sized to the content instead of the visible area — it stops
+   scrolling properly — and the overhang is clipped away with no scrollbar to
+   reach it. `clip` rather than `hidden` so these boxes are not scroll containers
+   at all: a hidden box can still be scrolled by the engine to reveal the caret,
+   and nothing the user does scrolls it back, which is how the note header and
+   the top of a note disappear for good. `hidden` stays as the fallback for
+   engines predating `clip` (WebKit before 16). */
+.app { display: grid; grid-template-columns: 322px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: var(--app-height, 100dvh); overflow: hidden; overflow: clip; background: var(--paper); }
 .app.rail-collapsed { grid-template-columns: minmax(0, 1fr); }
 .rail-collapsed .rail { display: none; }
 
 /* ===================== Rail (folders + notes + segmented) ===================== */
-.rail { display: flex; flex-direction: column; min-width: 0; background: var(--paper-warm); border-right: 1px solid var(--line); }
+.rail { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--paper-warm); border-right: 1px solid var(--line); }
 .rail-head { display: flex; align-items: center; gap: 10px; padding: max(18px, var(--sait, env(safe-area-inset-top))) 15px 12px; }
 .brand { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; height: 34px; font-size: 18px; font-weight: 700; letter-spacing: -.04em; }
 .brand span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -164,7 +174,7 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
 .rail-footer { margin-top: auto; border-top: 1px solid var(--line); padding: 8px 11px max(9px, var(--saib, env(safe-area-inset-bottom))); display: grid; gap: 2px; }
 
 /* ===================== Note pane ===================== */
-.note-pane { position: relative; min-width: 0; display: flex; flex-direction: column; background: var(--paper); overflow: hidden; }
+.note-pane { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--paper); overflow: hidden; overflow: clip; }
 .note-header { height: calc(60px + max(0px, var(--sait, env(safe-area-inset-top)))); display: flex; align-items: center; padding: max(0px, var(--sait, env(safe-area-inset-top))) 28px 0; border-bottom: 1px solid var(--line); gap: 12px; flex: 0 0 auto; background: color-mix(in srgb, var(--paper) 91%, transparent); backdrop-filter: blur(14px); }
 .note-breadcrumb { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; font-weight: 500; }
 .note-breadcrumb svg { color: var(--soft); }
