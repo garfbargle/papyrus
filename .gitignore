@@ -19,7 +19,10 @@ src-tauri/target/
 *.db
 *.db-*
 Papyrus Notes.zip
-Notes/
+# Anchored: an unanchored "Notes/" also matches the Android package directory
+# src-tauri/gen/android/app/src/main/java/com/papyrus/notes/ (git is
+# case-insensitive on macOS), which silently drops MainActivity.kt from the repo.
+/Notes/
 
 # Environment-specific configuration and secrets
 .env
