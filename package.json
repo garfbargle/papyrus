@@ -12,6 +12,9 @@
     "deploy:dry-run": "npm run build && wrangler deploy --dry-run",
     "deploy:relay": "npm --prefix relay run deploy",
     "deploy:all": "npm run deploy:relay && npm run deploy",
+    "deploy:devices": "bash scripts/deploy-local.sh",
+    "deploy:devices:mac": "bash scripts/deploy-local.sh mac",
+    "deploy:devices:android": "bash scripts/deploy-local.sh android",
     "tauri": "tauri",
     "icons": "python3 scripts/round-full-icon.py Resources/app-icon.png -o app-icon.png && npm run tauri -- icon app-icon.png"
   },
