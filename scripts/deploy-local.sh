@@ -44,14 +44,17 @@ deploy_mac() {
   [ -d "$built" ] || die "expected bundle at $built"
 
   # Quit a running copy so we're not swapping the bundle out from under it.
-  if pgrep -x Papyrus >/dev/null 2>&1; then
+  # The user-facing app is named Papyrus, but the bundled executable is
+  # lowercase `papyrus`. Match the actual process so an update never replaces
+  # the bundle under a still-running WebView (which can leave it blank).
+  if pgrep -x papyrus >/dev/null 2>&1; then
     bold "Quitting the running Papyrus"
     osascript -e 'tell application "Papyrus" to quit' >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do
-      pgrep -x Papyrus >/dev/null 2>&1 || break
+      pgrep -x papyrus >/dev/null 2>&1 || break
       sleep 0.5
     done
-    pgrep -x Papyrus >/dev/null 2>&1 && pkill -x Papyrus || true
+    pgrep -x papyrus >/dev/null 2>&1 && pkill -x papyrus || true
   fi
 
   bold "Installing to /Applications/Papyrus.app"

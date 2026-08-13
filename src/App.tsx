@@ -456,6 +456,8 @@ function App() {
   };
 
   const currentCategory = categories.find((category) => category.id === current?.categoryId);
+  const pairedDeviceCount = (syncStatus?.devices.length || 0) - 1;
+  const sidebarSyncLabel = syncStatus?.status === "Offline" && pairedDeviceCount <= 0 ? "Not set up" : syncStatus?.status;
 
   const noteRow = (note: NoteListItem, variant: "rich" | "compact") => (
     <button key={note.id} className={`note-row ${variant}${current?.id === note.id ? " selected" : ""}${draggingId === note.id ? " dragging" : ""}`} onClick={() => void openNote(note.id)} draggable={view !== "trash"} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", note.id); setDraggingId(note.id); setNoteMenu(null); }} onDragEnd={() => { setDraggingId(null); setDropTarget(null); }} onContextMenu={(event) => { event.preventDefault(); setOverflow(false); setCategoryMenu(null); setNoteMenu({ id: note.id, x: Math.min(event.clientX, window.innerWidth - 200), y: Math.min(event.clientY, window.innerHeight - 160) }); }}>
@@ -523,7 +525,7 @@ function App() {
         </div>
 
         <div className="rail-footer">
-          {syncStatus && <button className="sidebar-sync" onClick={() => setSettingsOpen(true)} aria-label={`Sync: ${syncStatus.status}`}><i className={syncStatus.status.toLowerCase().replaceAll(" ", "-")} /><span>{syncStatus.status}</span>{syncStatus.pendingOutgoingChanges > 0 && <b>{syncStatus.pendingOutgoingChanges}</b>}</button>}
+          {syncStatus && <button className="sidebar-sync" onClick={() => setSettingsOpen(true)} aria-label={`Sync: ${sidebarSyncLabel}`}><i className={syncStatus.status.toLowerCase().replaceAll(" ", "-")} /><span>{sidebarSyncLabel}</span>{syncStatus.pendingOutgoingChanges > 0 && <b title={`${syncStatus.pendingOutgoingChanges} changes ready to upload`}>{syncStatus.pendingOutgoingChanges}</b>}</button>}
           <button className={view === "trash" ? "nav-item active" : "nav-item"} onClick={openTrash}><Icon name="trash" />Trash</button>
           <button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="sun" />Settings</button>
         </div>

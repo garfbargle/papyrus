@@ -30,6 +30,9 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
   useEffect(() => {
     const dismiss = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // Android keyboards can send Escape while dismissing themselves. Keep a
+      // half-entered pairing code intact instead of closing the whole sheet.
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       if (revoke) setRevoke(null);
       else if (pairView) setPairView(null);
     };
@@ -158,6 +161,7 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
   const activeDevices = status?.devices.filter((device) => !device.revokedAt) || [];
   const pairedDevices = activeDevices.filter((device) => !device.isCurrentDevice);
   const statusClass = status?.status.toLowerCase().replaceAll(" ", "-") || "offline";
+  const syncLabel = status?.status === "Offline" && pairedDevices.length === 0 ? "Not set up" : status?.status || "Checking…";
 
   return <>
     <section className="sync-section settings-card-section">
@@ -166,12 +170,12 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
         <div><strong>Sync</strong><span>Private, end-to-end encrypted device sync.</span></div>
       </div>
       <div className="sync-overview">
-        <div className={`sync-state ${statusClass}`}><i /><span>{status?.status || "Checking…"}</span></div>
+        <div className={`sync-state ${statusClass}`}><i /><span>{syncLabel}</span></div>
         <button className="secondary-button" disabled={busy} onClick={() => void syncNow()}><Icon name="undo" size={16} />{busy ? "Working…" : "Sync Now"}</button>
       </div>
       <div className="sync-facts">
         <span>{status?.lastSuccessfulSync ? `Last synced ${relativeTime(status.lastSuccessfulSync)}` : "Not synced yet"}</span>
-        <span>{status?.pendingOutgoingChanges ? `${status.pendingOutgoingChanges} change${status.pendingOutgoingChanges === 1 ? "" : "s"} waiting` : "No changes waiting"}</span>
+        <span>{status?.pendingOutgoingChanges ? `${status.pendingOutgoingChanges} change${status.pendingOutgoingChanges === 1 ? "" : "s"} ready to upload` : "No changes waiting"}</span>
       </div>
       {status?.attentionMessage && <div className="sync-attention">{status.attentionMessage}</div>}
 
@@ -186,7 +190,7 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
           <div><strong>{device.displayName}</strong><span>{device.isCurrentDevice ? "This device" : device.lastSeenAt ? `Seen ${relativeTime(device.lastSeenAt)}` : "Paired device"}</span></div>
           {!device.isCurrentDevice && <button className="remove-device" onClick={() => setRevoke(device)}>Remove</button>}
         </div>)}
-        {pairedDevices.length === 0 && <div className="empty-devices"><span>Your notes currently live on this device only.</span></div>}
+        {pairedDevices.length === 0 && <div className="empty-devices"><span>Your notes are local to this device. Add another device to turn on sync.</span></div>}
       </div>
 
       <div className="pair-actions">
@@ -213,7 +217,7 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
           <button className="scan-button" disabled={busy} onClick={() => void scanCode()}><span className="scan-corners"><i /><i /><i /><i /></span><strong>Scan QR code</strong><small>Uses your camera only for this scan</small></button>
           <div className="pair-divider"><span>or paste the code</span></div>
           <textarea className="pair-code-input" rows={3} value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="papyrus-pair-v1:…" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
-          <button className="primary-button wide" disabled={busy || !joinCode.trim()} onClick={() => void submitJoin()}>{busy ? "Connecting…" : "Continue"}</button>
+          <button className="primary-button wide pair-continue" disabled={busy || !joinCode.trim()} onClick={() => void submitJoin()}>{busy ? "Connecting…" : "Continue"}</button>
         </>}
         {pairView === "waiting" && <div className="pair-waiting">
           <span className="waiting-pulse"><i /><i /><i /></span><span className="dialog-kicker">Secure handoff</span><h2 id="pair-title">Almost there</h2><p>{pairMessage}</p><small>Keep Papyrus open on both devices for a moment.</small>

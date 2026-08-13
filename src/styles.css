@@ -442,3 +442,10 @@ kbd { border: 1px solid var(--line); border-radius: 4px; color: var(--soft); pad
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Foldables can be wide enough for the desktop rail while still being touch-only. */
+@media (pointer: coarse) {
+  .search kbd { display: none; }
+  .pair-dialog { overflow-y: auto; overscroll-behavior: contain; }
+  .pair-dialog .pair-continue { position: sticky; bottom: 0; box-shadow: 0 -10px 18px var(--paper); }
+}

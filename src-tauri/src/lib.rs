@@ -2554,6 +2554,7 @@ fn run_sync_cycle(state: &AppState) -> Result<SyncStatus> {
             .lock()
             .map_err(|_| "Notebook is busy".to_string())?;
         set_sync_state(&connection, "last_sync_error", "")?;
+        set_sync_state(&connection, "more_inbound_packages", "0")?;
     }
     let outgoing = {
         let connection = state
@@ -2611,6 +2612,20 @@ fn run_sync_cycle(state: &AppState) -> Result<SyncStatus> {
             return sync_status(&connection, &identity);
         }
     };
+    {
+        let connection = state
+            .db
+            .lock()
+            .map_err(|_| "Notebook is busy".to_string())?;
+        // A full page is the relay's signal that another pull may be needed.
+        // Preserve it so `sync_now` can drain a newly paired notebook instead
+        // of falsely reporting success after the first 32 packages.
+        set_sync_state(
+            &connection,
+            "more_inbound_packages",
+            if fetched.packages.len() == 32 { "1" } else { "0" },
+        )?;
+    }
     for remote in fetched.packages {
         if remote.package_id != remote.envelope.package_id {
             continue;
@@ -2720,7 +2735,25 @@ fn get_sync_status(state: State<'_, AppState>) -> Result<SyncStatus> {
 
 #[tauri::command]
 fn sync_now(state: State<'_, AppState>) -> Result<SyncStatus> {
-    run_sync_cycle(&state)
+    // Packages are deliberately sent in bounded pages. A foreground sync must
+    // nevertheless drain those pages before claiming the notebook is current.
+    // Stop if a retryable failure leaves the outbox unchanged, and keep a hard
+    // ceiling so a pathological relay cannot monopolize the UI indefinitely.
+    let mut previous_pending = None;
+    let mut status = run_sync_cycle(&state)?;
+    for _ in 0..31 {
+        let more_inbound = {
+            let connection = state.db.lock().map_err(|_| "Notebook is busy".to_string())?;
+            sync_state(&connection, "more_inbound_packages")?.as_deref() == Some("1")
+        };
+        let outbox_progressed = previous_pending.is_none_or(|pending| pending != status.pending_outgoing_changes);
+        if !more_inbound && (status.pending_outgoing_changes == 0 || !outbox_progressed) {
+            break;
+        }
+        previous_pending = Some(status.pending_outgoing_changes);
+        status = run_sync_cycle(&state)?;
+    }
+    Ok(status)
 }
 
 #[tauri::command]

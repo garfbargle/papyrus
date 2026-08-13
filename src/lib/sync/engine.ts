@@ -25,7 +25,7 @@ export interface SyncContext {
 
 export class DeviceRevokedError extends Error {}
 
-export async function runSyncCycle(ctx: SyncContext): Promise<void> {
+export async function runSyncCycle(ctx: SyncContext, round = 0): Promise<void> {
   if ((await authorizedDeviceCount()) <= 1) return; // only this device — nothing to sync
 
   await setSyncState("last_sync_error", "");
@@ -113,7 +113,17 @@ export async function runSyncCycle(ctx: SyncContext): Promise<void> {
     }
   }
 
-  if (!hadError) await setSyncState("last_successful_sync", new Date().toISOString());
+  if (!hadError) {
+    // The relay intentionally pages deliveries. A user-triggered sync should
+    // drain a freshly paired notebook, not stop after one page and display a
+    // misleading “Synced” state. The ceiling prevents a bad relay from holding
+    // the UI forever; normal cycles finish well below it.
+    const moreOutgoing = (await pendingOutbox()).length > 0;
+    if (round < 31 && (moreOutgoing || packages.length === 32)) {
+      return runSyncCycle(ctx, round + 1);
+    }
+    await setSyncState("last_successful_sync", new Date().toISOString());
+  }
 }
 
 async function ackQuietly(ctx: SyncContext, envelope: SyncEnvelope): Promise<void> {
