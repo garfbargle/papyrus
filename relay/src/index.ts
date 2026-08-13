@@ -315,6 +315,10 @@ async function handlePairingFinish(request: Request, env: Env): Promise<Response
   if (!pairing || pairing.guest_device_id !== payload.deviceId || !pairing.guest_signing_key || Date.parse(pairing.expires_at) <= Date.now()) throw new HttpError(410, "Pairing session expired.");
   await verifyGuestProof(request, raw, payload.deviceId, pairing.guest_signing_key);
   if (await sha256Hex(encoder.encode(payload.secret)) !== pairing.secret_hash) throw new HttpError(403, "Invalid pairing code.");
+  // The guest starts polling as soon as it has submitted its hello. Until the
+  // host approves, this is the ordinary, recoverable state — not a consumed
+  // pairing snapshot.
+  if (pairing.state === "open" || pairing.state === "claimed") return Response.json({ ready: false });
   if (pairing.state !== "complete" || !pairing.sealed_payload_key) throw new HttpError(410, "Pairing snapshot already used or expired.");
   const consume = await env.SYNC_DB.prepare("UPDATE pairing_sessions SET state = 'expired' WHERE id = ? AND state = 'complete'").bind(payload.sessionId).run();
   if (consume.meta.changes !== 1) throw new HttpError(410, "Pairing snapshot already used or expired.");

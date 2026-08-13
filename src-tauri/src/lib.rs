@@ -1680,8 +1680,13 @@ fn configured_relay(connection: &Connection) -> Result<Option<String>> {
     }
     #[cfg(debug_assertions)]
     return Ok(Some("http://127.0.0.1:8787".to_string()));
+    // The public relay is part of the app's normal release configuration. The
+    // compile-time value above remains available for staging builds, but a
+    // sideloaded Mac or Android release must work out of the box.
     #[cfg(not(debug_assertions))]
-    Ok(None)
+    Ok(Some(
+        "https://papyrus-sync-relay.c0di.workers.dev".to_string(),
+    ))
 }
 
 fn sync_status(connection: &Connection, identity: &sync::SyncIdentity) -> Result<SyncStatus> {

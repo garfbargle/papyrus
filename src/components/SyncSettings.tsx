@@ -54,6 +54,16 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
     finally { setBusy(false); }
   };
 
+  const copyPairingCode = async () => {
+    if (!offer) return;
+    try {
+      await navigator.clipboard.writeText(offer.code);
+      onNotice("Pairing code copied");
+    } catch {
+      setPairMessage("Copy is unavailable here. Select the code below and copy it manually.");
+    }
+  };
+
   const startHostPairing = async () => {
     setBusy(true); setPairMessage("Creating a private one-time code…");
     try {
@@ -193,7 +203,8 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
           <p>{pairMessage}</p>
           <div className="qr-frame">{qrCode ? <img src={qrCode} alt="One-time Papyrus pairing QR code" /> : <span>Creating code…</span>}</div>
           <div className="pair-expiry"><i />Code expires in about 5 minutes and works once.</div>
-          <button className="secondary-button wide" onClick={() => { if (offer) void navigator.clipboard.writeText(offer.code).then(() => onNotice("Pairing code copied")); }}><Icon name="copy" size={16} />Copy code instead</button>
+          <button className="secondary-button wide" onClick={() => void copyPairingCode()}><Icon name="copy" size={16} />Copy code instead</button>
+          <label className="pair-code-fallback"><span>Or select this code to paste on the new device</span><textarea className="pair-code-input" aria-label="Pairing code" rows={3} value={offer?.code || ""} readOnly autoCapitalize="off" autoCorrect="off" spellCheck={false} /></label>
         </>}
         {pairView === "join" && <>
           <span className="dialog-kicker">Pair this device</span><h2 id="pair-title">Bring your notebook here</h2>

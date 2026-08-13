@@ -98,6 +98,15 @@ describe("encrypted relay authorization", () => {
     expect(rows?.n).toBe(1);
   });
 
+  it("keeps a joining device in a waiting state until the host approves it", async () => {
+    const host = await device("host"); const guest = await device("guest"); const vaultId = "vault";
+    const secret = "waiting-secret";
+    await claimSession(host, guest, vaultId, "waiting-session", secret);
+    const waiting = await signedPost("/v1/pairing/finish", guest, { sessionId: "waiting-session", secret, deviceId: guest.id });
+    expect(waiting.status).toBe(200);
+    expect(await waiting.json()).toEqual({ ready: false });
+  });
+
   it("rejects starting a new vault for a device already linked elsewhere with a 409, not a 500", async () => {
     const host = await device("host"); const guest = await device("guest");
     await claimSession(host, guest, "vault-a", "session-a", "secret-a");

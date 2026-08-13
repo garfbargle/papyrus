@@ -17,8 +17,12 @@ import {
 import * as store from "./store.js";
 
 const RELAY_URL_STATE = "relay_url";
-const DEFAULT_RELAY_URL: string | undefined =
-  (import.meta as { env?: Record<string, string> }).env?.VITE_PAPYRUS_RELAY_URL;
+// Every shipping build needs a relay without requiring a per-device setup
+// variable. Keep the build-time value as an override so local/staging builds
+// can still point at an isolated relay.
+const DEFAULT_RELAY_URL =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_PAPYRUS_RELAY_URL
+  ?? "https://papyrus-sync-relay.c0di.workers.dev";
 
 let contextPromise: Promise<SyncContext> | null = null;
 
