@@ -96,6 +96,9 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
 
   useEffect(() => {
     if (!paper.current || value === knownValue.current) return;
+    // The DOM is the authoritative draft until its scheduled commit reaches React.
+    // Never let an async refresh replace text that the user has already typed.
+    if (pendingCommit.current !== null) return;
     paper.current.innerHTML = renderMarkdown(value);
     knownValue.current = value;
   }, [value]);
