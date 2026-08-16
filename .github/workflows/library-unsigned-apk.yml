@@ -1,0 +1,75 @@
+name: Library unsigned APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: library-unsigned-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Configure Rust for Android
+        run: |
+          rustup default stable
+          rustup target add aarch64-linux-android
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Verify tracked Android glue
+        run: |
+          test -f src-tauri/gen/android/app/src/main/java/com/papyrus/notes/MainActivity.kt
+          test -f src-tauri/gen/android/buildSrc/src/main/java/com/papyrus/notes/kotlin/RustPlugin.kt
+          test -f src-tauri/gen/android/buildSrc/src/main/java/com/papyrus/notes/kotlin/BuildTask.kt
+          grep -q 'initializeNdkContext' src-tauri/gen/android/app/src/main/java/com/papyrus/notes/MainActivity.kt
+
+      - name: Build unsigned release APK
+        run: npx tauri android build --apk --target aarch64
+
+      - name: Verify unsigned APK
+        run: |
+          APK="$(find src-tauri/gen/android/app/build/outputs/apk -name '*-release-unsigned.apk' -print -quit)"
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "$APK" | grep -q "package: name='com.papyrus.notes'"
+          if "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "$APK" >/dev/null 2>&1; then
+            echo "Expected an unsigned APK, but apksigner verified it as signed." >&2
+            exit 1
+          fi
+          mkdir -p library-artifact
+          cp "$APK" library-artifact/papyrus-release-unsigned.apk
+
+      - name: Upload unsigned APK for Library
+        uses: actions/upload-artifact@v4
+        with:
+          name: library-unsigned-apk
+          path: library-artifact/papyrus-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 7
