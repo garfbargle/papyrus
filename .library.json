@@ -1,0 +1,11 @@
+{
+  "name": "Papyrus",
+  "tagline": "A quiet place for every thought.",
+  "description": "Local-first Markdown notes that stay private, portable, and yours.",
+  "category": "Productivity",
+  "accent": "#9D6D38",
+  "featured": false,
+  "sourceVisible": true,
+  "provenance": "library-managed",
+  "assetPattern": "^papyrus-.*\\.apk$"
+}
