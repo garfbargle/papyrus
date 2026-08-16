@@ -83,10 +83,13 @@ function App() {
   const [noteConflict, setNoteConflict] = useState<NoteConflict | null>(null);
   const [reviewConflict, setReviewConflict] = useState(false);
   const editor = useRef<EditorView | null>(null);
-  const pendingSave = useRef<number | null>(null);
+  const pendingSaveTimers = useRef(new Map<string, number>());
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
+  const dirtyDrafts = useRef(new Map<string, Note>());
   const pendingSync = useRef<number | null>(null);
   const syncInFlight = useRef(false);
   const syncQueued = useRef(false);
+  const openRequest = useRef(0);
   // Auto-sync only matters once this device is paired with at least one other —
   // a cycle with no peers is a pure no-op. Mirror that into a ref so the timers
   // and event listeners can read it without being torn down on every status tick.
@@ -111,9 +114,20 @@ function App() {
     const openId = currentRef.current?.id;
     if (openId) {
       const [refreshed, conflict] = await Promise.all([api.getNote(openId), api.getNoteConflict(openId)]);
+      // The user may have opened another note while the reads were in flight. Never
+      // let a slow refresh from the old note replace the new editor state.
+      if (currentRef.current?.id !== openId) return;
       setNoteConflict(conflict);
-      if (refreshed) { const documentNote = placeLegacyTitleInBody(refreshed); currentRef.current = documentNote; setCurrent(documentNote); }
-      else if (!unsavedNoteIds.current.has(openId)) { currentRef.current = null; setCurrent(null); setNoteConflict(null); setReviewConflict(false); }
+      if (refreshed) {
+        // A local draft remains authoritative until its save finishes. Replacing it
+        // here would feed an older body back into contentEditable and move the caret.
+        if (!dirtyDrafts.current.has(openId)) {
+          const documentNote = placeLegacyTitleInBody(refreshed);
+          currentRef.current = documentNote; setCurrent(documentNote);
+        }
+      } else if (!unsavedNoteIds.current.has(openId)) {
+        currentRef.current = null; setCurrent(null); setNoteConflict(null); setReviewConflict(false);
+      }
     }
   }, [filter, search]);
 
@@ -182,7 +196,8 @@ function App() {
   }, [view, search, loading, loadNotes]);
 
   useEffect(() => () => {
-    if (pendingSave.current) window.clearTimeout(pendingSave.current);
+    for (const timer of pendingSaveTimers.current.values()) window.clearTimeout(timer);
+    pendingSaveTimers.current.clear();
     if (pendingSync.current) window.clearTimeout(pendingSync.current);
   }, []);
 
@@ -228,44 +243,90 @@ function App() {
     return () => window.removeEventListener("keydown", dismiss);
   }, [deletingCategory]);
 
-  const persist = useCallback(async (note: Note) => {
-    if (!note.body.trim()) return;
-    const title = titleFromMarkdown(note.body);
-    try {
-      const saved = await api.saveNote({ id: note.id, title, body: note.body, categoryId: note.categoryId });
-      unsavedNoteIds.current.delete(note.id);
-      if (currentRef.current?.id === note.id) {
-        const combined = { ...note, ...saved, title, body: saved.body ?? note.body };
-        currentRef.current = combined; setCurrent(combined);
+  // Save operations are serialized. Besides avoiding revision-parent races in the
+  // local store, this makes their completion order deterministic. Most importantly,
+  // an older save may update storage metadata but can never replace a newer draft in
+  // React state — the body/category must still match the snapshot that was saved.
+  const persist = useCallback((note: Note): Promise<boolean> => {
+    if (!note.body.trim() && unsavedNoteIds.current.has(note.id)) {
+      dirtyDrafts.current.delete(note.id);
+      return Promise.resolve(true);
+    }
+    const task = saveChain.current.then(async () => {
+      const title = titleFromMarkdown(note.body);
+      try {
+        const saved = await api.saveNote({ id: note.id, title, body: note.body, categoryId: note.categoryId });
+        unsavedNoteIds.current.delete(note.id);
+        const latestDraft = dirtyDrafts.current.get(note.id);
+        if (latestDraft?.body === note.body && latestDraft.categoryId === note.categoryId) dirtyDrafts.current.delete(note.id);
+        const openNote = currentRef.current;
+        if (openNote?.id === note.id && openNote.body === note.body && openNote.categoryId === note.categoryId) {
+          const combined = { ...openNote, ...saved, title, body: openNote.body, categoryId: openNote.categoryId };
+          currentRef.current = combined; setCurrent(combined);
+        }
+        window.setTimeout(() => { void loadNotes(); }, 350);
+        scheduleSync();
+        return true;
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Could not save this note.");
+        return false;
       }
-      window.setTimeout(() => { void loadNotes(); }, 350);
-      scheduleSync();
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save this note."); }
+    });
+    saveChain.current = task.then(() => undefined);
+    return task;
   }, [loadNotes, scheduleSync]);
+
+  const clearPendingSave = (id: string, discardDraft = false) => {
+    const timer = pendingSaveTimers.current.get(id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    pendingSaveTimers.current.delete(id);
+    if (discardDraft) dirtyDrafts.current.delete(id);
+  };
+
+  const schedulePersist = (note: Note) => {
+    dirtyDrafts.current.set(note.id, note);
+    clearPendingSave(note.id);
+    const timer = window.setTimeout(() => {
+      pendingSaveTimers.current.delete(note.id);
+      const latest = dirtyDrafts.current.get(note.id);
+      if (latest) void persist(latest);
+    }, 480);
+    pendingSaveTimers.current.set(note.id, timer);
+  };
+
+  const flushPersist = async (id: string) => {
+    clearPendingSave(id);
+    const latest = dirtyDrafts.current.get(id);
+    if (!latest) return true;
+    const saved = await persist(latest);
+    if (!saved && dirtyDrafts.current.has(id)) schedulePersist(dirtyDrafts.current.get(id)!);
+    return saved;
+  };
 
   const changeCurrent = (change: Partial<Pick<Note, "body" | "categoryId">>) => {
     const existing = currentRef.current; if (!existing || existing.deletedAt) return;
     const body = change.body ?? existing.body;
     const next = { ...existing, ...change, body, title: titleFromMarkdown(body), updatedAt: new Date().toISOString() };
-    currentRef.current = next; setCurrent(next);
-    if (pendingSave.current) window.clearTimeout(pendingSave.current);
-    pendingSave.current = window.setTimeout(() => { void persist(next); }, 480);
+    currentRef.current = next; setCurrent(next); schedulePersist(next);
   };
 
   const openNote = async (id: string) => {
+    const request = ++openRequest.current;
     setOverflow(false); setMoveMenu(false);
     try {
       const [note, conflict] = await Promise.all([api.getNote(id), api.getNoteConflict(id)]);
-      if (note) {
-        const documentNote = placeLegacyTitleInBody(note);
+      if (request !== openRequest.current) return;
+      const localDraft = dirtyDrafts.current.get(id);
+      if (note || localDraft) {
+        const documentNote = localDraft ?? placeLegacyTitleInBody(note!);
         currentRef.current = documentNote; setCurrent(documentNote); setNoteConflict(conflict); setReviewConflict(false); setSourceMode(false); setMobileScreen("note");
-        if (documentNote.body !== note.body) void persist(documentNote);
+        if (!localDraft && note && documentNote.body !== note.body) void persist(documentNote);
       }
-    } catch { setNotice("Could not open this note."); }
+    } catch { if (request === openRequest.current) setNotice("Could not open this note."); }
   };
 
   const startNote = (categoryId: string | null) => {
-    if (pendingSave.current) window.clearTimeout(pendingSave.current);
+    openRequest.current += 1;
     const note = { ...freshNote(), categoryId };
     unsavedNoteIds.current.add(note.id);
     currentRef.current = note; setCurrent(note); setNoteConflict(null); setReviewConflict(false); setOverflow(false); setNoteMenu(null); setMobileScreen("note"); setSourceMode(false);
@@ -278,6 +339,7 @@ function App() {
   const moveNoteToFolder = async (id: string, categoryId: string | null) => {
     const note = notes.find((candidate) => candidate.id === id);
     if (note && note.categoryId === categoryId) return;
+    if (dirtyDrafts.current.has(id) && !(await flushPersist(id))) return;
     try {
       await api.moveNote(id, categoryId);
       const name = categoryId ? categories.find((category) => category.id === categoryId)?.name ?? null : null;
@@ -293,6 +355,7 @@ function App() {
   };
 
   const openTrash = () => {
+    openRequest.current += 1;
     setView("trash"); setSettingsOpen(false); setSearch(""); setCurrent(null); currentRef.current = null; setActiveFolderId(null);
     setNoteConflict(null); setReviewConflict(false); setOverflow(false); setMobileScreen("list");
   };
@@ -338,39 +401,52 @@ function App() {
   };
 
   const moveTo = async (categoryId: string | null) => {
-    if (!current) return;
-    const next = { ...current, categoryId, updatedAt: new Date().toISOString() };
-    currentRef.current = next; setCurrent(next); setMoveMenu(false); setOverflow(false);
-    await api.moveNote(next.id, categoryId); await loadNotes(); scheduleSync();
+    const active = currentRef.current; if (!active) return;
+    if (dirtyDrafts.current.has(active.id) && !(await flushPersist(active.id))) return;
+    try {
+      await api.moveNote(active.id, categoryId);
+      const name = categoryId ? categories.find((category) => category.id === categoryId)?.name ?? null : null;
+      if (currentRef.current?.id === active.id) {
+        const next = { ...currentRef.current, categoryId, categoryName: name, updatedAt: new Date().toISOString() };
+        currentRef.current = next; setCurrent(next);
+      }
+      setMoveMenu(false); setOverflow(false); await loadNotes(); scheduleSync();
+    } catch { setNotice("Could not move this note."); }
   };
 
   const trashCurrent = async () => {
-    if (!current) return;
-    if (!current.body.trim()) { setCurrent(null); currentRef.current = null; setMobileScreen("list"); return; }
-    await api.trashNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync();
+    const active = currentRef.current; if (!active) return;
+    if (!active.body.trim() && unsavedNoteIds.current.has(active.id)) {
+      clearPendingSave(active.id, true); unsavedNoteIds.current.delete(active.id);
+      setCurrent(null); currentRef.current = null; setMobileScreen("list"); return;
+    }
+    if (!(await flushPersist(active.id))) return;
+    await api.trashNote(active.id); clearPendingSave(active.id, true); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync();
     setNotice("Moved to Trash");
   };
 
   const restoreCurrent = async () => {
-    if (!current) return;
-    await api.restoreNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Note restored");
+    const active = currentRef.current; if (!active) return;
+    await api.restoreNote(active.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Note restored");
   };
 
   const deleteCurrent = async () => {
-    if (!current) return;
-    await api.deleteNote(current.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
+    const active = currentRef.current; if (!active) return;
+    clearPendingSave(active.id, true); await saveChain.current;
+    await api.deleteNote(active.id); unsavedNoteIds.current.delete(active.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
   };
 
   const duplicateCurrent = async () => {
-    if (!current) return;
-    const savedDuplicate = await api.duplicateNote(current.id);
+    const active = currentRef.current; if (!active) return;
+    if (dirtyDrafts.current.has(active.id) && !(await flushPersist(active.id))) return;
+    const savedDuplicate = await api.duplicateNote(active.id);
     const duplicate = placeLegacyTitleInBody(savedDuplicate); currentRef.current = duplicate; setCurrent(duplicate); setOverflow(false);
     if (duplicate.body !== savedDuplicate.body) void persist(duplicate);
     await loadNotes(); scheduleSync();
   };
 
   const trashNoteId = async (id: string) => {
-    setNoteMenu(null); await api.trashNote(id);
+    setNoteMenu(null); if (dirtyDrafts.current.has(id) && !(await flushPersist(id))) return; await api.trashNote(id); clearPendingSave(id, true);
     if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; setNoteConflict(null); setMobileScreen("list"); }
     await loadNotes(); scheduleSync(); setNotice("Moved to Trash");
   };
@@ -382,7 +458,7 @@ function App() {
   };
 
   const deleteNoteId = async (id: string) => {
-    setNoteMenu(null); await api.deleteNote(id);
+    setNoteMenu(null); clearPendingSave(id, true); await saveChain.current; await api.deleteNote(id); unsavedNoteIds.current.delete(id);
     if (currentRef.current?.id === id) { setCurrent(null); currentRef.current = null; setMobileScreen("list"); }
     await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
   };
@@ -390,6 +466,7 @@ function App() {
   const duplicateNoteId = async (id: string) => {
     setNoteMenu(null);
     try {
+      if (dirtyDrafts.current.has(id) && !(await flushPersist(id))) return;
       const duplicate = placeLegacyTitleInBody(await api.duplicateNote(id));
       currentRef.current = duplicate; setCurrent(duplicate); setNoteConflict(null); setMobileScreen("note"); setSourceMode(false);
       await loadNotes(); scheduleSync();
@@ -397,9 +474,10 @@ function App() {
   };
 
   const resolveConflict = async (resolution: "current" | "other" | "both") => {
-    if (!current || !noteConflict) return;
+    const active = currentRef.current; if (!active || !noteConflict) return;
     try {
-      const resolved = placeLegacyTitleInBody(await api.resolveNoteConflict(current.id, resolution));
+      if (dirtyDrafts.current.has(active.id) && !(await flushPersist(active.id))) return;
+      const resolved = placeLegacyTitleInBody(await api.resolveNoteConflict(active.id, resolution));
       currentRef.current = resolved; setCurrent(resolved); setNoteConflict(null); setReviewConflict(false);
       await loadNotes(); scheduleSync(); setNotice(resolution === "both" ? "Both versions kept" : "Conflict resolved");
       setSyncStatus(await api.getSyncStatus());
@@ -411,9 +489,9 @@ function App() {
   };
 
   const share = async () => {
-    if (!current) return;
-    const content = current.body;
-    if (navigator.share) { try { await navigator.share({ title: noteTitle(current), text: content }); } catch { /* share cancellation */ } }
+    const active = currentRef.current; if (!active) return;
+    const content = active.body;
+    if (navigator.share) { try { await navigator.share({ title: noteTitle(active), text: content }); } catch { /* share cancellation */ } }
     else await copy(content, "Markdown copied");
   };
 
@@ -541,7 +619,7 @@ function App() {
               {!current.deletedAt && <button className="icon-button" onClick={() => void share()} aria-label="Share note"><Icon name="share" /></button>}
               <div className="menu-wrap"><button className="icon-button" onClick={() => setOverflow((shown) => !shown)} aria-label="More note actions"><Icon name="dots" /></button>
                 {overflow && <div className="pop-menu note-menu">
-                  {current.deletedAt ? <><button onClick={() => void restoreCurrent()}><Icon name="undo" />Restore</button><button className="danger" onClick={() => void deleteCurrent()}><Icon name="trash" />Delete permanently</button></> : <><div className="submenu-wrap"><button onClick={() => setMoveMenu((shown) => !shown)}><Icon name="folder" />Move to…<Icon name="chevronDown" size={15} /></button>{moveMenu && <div className="sub-menu"><button onClick={() => void moveTo(null)}>No folder</button>{categories.map((category) => <button onClick={() => void moveTo(category.id)} key={category.id}>{category.name}</button>)}</div>}</div><button onClick={() => { setSourceMode((shown) => !shown); setOverflow(false); }}>{sourceMode ? "Return to paper" : "Edit Markdown source"}</button><button onClick={() => void duplicateCurrent()}><Icon name="copy" />Duplicate</button><button onClick={() => void copy(current.body, "Markdown copied")}><Icon name="file" />Copy Markdown</button><button className="danger" onClick={() => void trashCurrent()}><Icon name="trash" />Move to Trash</button></>}
+                  {current.deletedAt ? <><button onClick={() => void restoreCurrent()}><Icon name="undo" />Restore</button><button className="danger" onClick={() => void deleteCurrent()}><Icon name="trash" />Delete permanently</button></> : <><div className="submenu-wrap"><button onClick={() => setMoveMenu((shown) => !shown)}><Icon name="folder" />Move to…<Icon name="chevronDown" size={15} /></button>{moveMenu && <div className="sub-menu"><button onClick={() => void moveTo(null)}>No folder</button>{categories.map((category) => <button onClick={() => void moveTo(category.id)} key={category.id}>{category.name}</button>)}</div>}</div><button onClick={() => { setSourceMode((shown) => !shown); setOverflow(false); }}>{sourceMode ? "Return to paper" : "Edit Markdown source"}</button><button onClick={() => void duplicateCurrent()}><Icon name="copy" />Duplicate</button><button onClick={() => void copy(currentRef.current?.body ?? current.body, "Markdown copied")}><Icon name="file" />Copy Markdown</button><button className="danger" onClick={() => void trashCurrent()}><Icon name="trash" />Move to Trash</button></>}
                 </div>}
               </div>
             </div>
