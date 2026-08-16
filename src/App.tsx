@@ -118,13 +118,12 @@ function App() {
       // let a slow refresh from the old note replace the new editor state.
       if (currentRef.current?.id !== openId) return;
       setNoteConflict(conflict);
+      // A local draft remains authoritative until its save finishes — even if a
+      // concurrent sync temporarily reports the stored note as missing.
+      if (dirtyDrafts.current.has(openId)) return;
       if (refreshed) {
-        // A local draft remains authoritative until its save finishes. Replacing it
-        // here would feed an older body back into contentEditable and move the caret.
-        if (!dirtyDrafts.current.has(openId)) {
-          const documentNote = placeLegacyTitleInBody(refreshed);
-          currentRef.current = documentNote; setCurrent(documentNote);
-        }
+        const documentNote = placeLegacyTitleInBody(refreshed);
+        currentRef.current = documentNote; setCurrent(documentNote);
       } else if (!unsavedNoteIds.current.has(openId)) {
         currentRef.current = null; setCurrent(null); setNoteConflict(null); setReviewConflict(false);
       }
@@ -418,30 +417,46 @@ function App() {
     const active = currentRef.current; if (!active) return;
     if (!active.body.trim() && unsavedNoteIds.current.has(active.id)) {
       clearPendingSave(active.id, true); unsavedNoteIds.current.delete(active.id);
-      setCurrent(null); currentRef.current = null; setMobileScreen("list"); return;
+      if (currentRef.current?.id === active.id) { setCurrent(null); currentRef.current = null; setMobileScreen("list"); }
+      return;
     }
     if (!(await flushPersist(active.id))) return;
-    await api.trashNote(active.id); clearPendingSave(active.id, true); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync();
-    setNotice("Moved to Trash");
+    await api.trashNote(active.id); clearPendingSave(active.id, true);
+    if (currentRef.current?.id === active.id) {
+      setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list");
+    }
+    await loadNotes(); scheduleSync(); setNotice("Moved to Trash");
   };
 
   const restoreCurrent = async () => {
     const active = currentRef.current; if (!active) return;
-    await api.restoreNote(active.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Note restored");
+    await api.restoreNote(active.id);
+    if (currentRef.current?.id === active.id) {
+      setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list");
+    }
+    await loadNotes(); scheduleSync(); setNotice("Note restored");
   };
 
   const deleteCurrent = async () => {
     const active = currentRef.current; if (!active) return;
     clearPendingSave(active.id, true); await saveChain.current;
-    await api.deleteNote(active.id); unsavedNoteIds.current.delete(active.id); setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list"); await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
+    await api.deleteNote(active.id); unsavedNoteIds.current.delete(active.id);
+    if (currentRef.current?.id === active.id) {
+      setCurrent(null); currentRef.current = null; setNoteConflict(null); setOverflow(false); setMobileScreen("list");
+    }
+    await loadNotes(); scheduleSync(); setNotice("Permanently deleted");
   };
 
   const duplicateCurrent = async () => {
     const active = currentRef.current; if (!active) return;
+    const request = openRequest.current;
     if (dirtyDrafts.current.has(active.id) && !(await flushPersist(active.id))) return;
     const savedDuplicate = await api.duplicateNote(active.id);
-    const duplicate = placeLegacyTitleInBody(savedDuplicate); currentRef.current = duplicate; setCurrent(duplicate); setOverflow(false);
+    const duplicate = placeLegacyTitleInBody(savedDuplicate);
     if (duplicate.body !== savedDuplicate.body) void persist(duplicate);
+    if (currentRef.current?.id === active.id && request === openRequest.current) {
+      currentRef.current = duplicate; setCurrent(duplicate); setOverflow(false);
+    }
     await loadNotes(); scheduleSync();
   };
 
@@ -465,12 +480,14 @@ function App() {
 
   const duplicateNoteId = async (id: string) => {
     setNoteMenu(null);
+    const request = ++openRequest.current;
     try {
       if (dirtyDrafts.current.has(id) && !(await flushPersist(id))) return;
       const duplicate = placeLegacyTitleInBody(await api.duplicateNote(id));
+      if (request !== openRequest.current) { await loadNotes(); scheduleSync(); return; }
       currentRef.current = duplicate; setCurrent(duplicate); setNoteConflict(null); setMobileScreen("note"); setSourceMode(false);
       await loadNotes(); scheduleSync();
-    } catch { setNotice("Could not duplicate this note."); }
+    } catch { if (request === openRequest.current) setNotice("Could not duplicate this note."); }
   };
 
   const resolveConflict = async (resolution: "current" | "other" | "both") => {
@@ -478,7 +495,9 @@ function App() {
     try {
       if (dirtyDrafts.current.has(active.id) && !(await flushPersist(active.id))) return;
       const resolved = placeLegacyTitleInBody(await api.resolveNoteConflict(active.id, resolution));
-      currentRef.current = resolved; setCurrent(resolved); setNoteConflict(null); setReviewConflict(false);
+      if (currentRef.current?.id === active.id) {
+        currentRef.current = resolved; setCurrent(resolved); setNoteConflict(null); setReviewConflict(false);
+      }
       await loadNotes(); scheduleSync(); setNotice(resolution === "both" ? "Both versions kept" : "Conflict resolved");
       setSyncStatus(await api.getSyncStatus());
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not resolve this conflict."); }
