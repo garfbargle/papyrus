@@ -19,6 +19,34 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check Library release gate
+        id: release
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          CURRENT="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          test -n "$CURRENT" && test "$CURRENT" != "null"
+
+          PREVIOUS=""
+          CHANGED=false
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ -n "${BEFORE_SHA:-}" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
+              PREVIOUS="$(git show "$BEFORE_SHA:src-tauri/tauri.conf.json" | jq -r '.version')"
+            fi
+            if [ "$CURRENT" != "$PREVIOUS" ]; then
+              CHANGED=true
+            fi
+          fi
+
+          echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "version_changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "Papyrus version: ${PREVIOUS:-<none>} -> $CURRENT; publish candidate: $CHANGED" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-node@v4
         with:
@@ -68,6 +96,7 @@ jobs:
           cp "$APK" library-artifact/papyrus-release-unsigned.apk
 
       - name: Upload unsigned APK for Library
+        if: github.event_name == 'push' && steps.release.outputs.version_changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: library-unsigned-apk
