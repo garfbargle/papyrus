@@ -103,7 +103,13 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
   };
 
   useEffect(() => {
-    if (!paper.current || value === knownValue.current) return;
+    if (!paper.current) return;
+    if (value === knownValue.current) {
+      // A newer local React update may have caught up after an external value was
+      // deferred. Do not leave that superseded external snapshot queued for blur.
+      pendingExternalValue.current = null;
+      return;
+    }
     // The DOM is authoritative for as long as the user is actively editing. Even a
     // legitimate sync refresh must not replace innerHTML under an active caret.
     if (pendingCommit.current !== null || document.activeElement === paper.current) {
