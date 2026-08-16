@@ -434,6 +434,17 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
     next.append(check, cursor); list.insertBefore(next, item.nextSibling); placeCaretInText(cursor); scheduleCommit();
   };
 
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    // Cmd/Ctrl+N is handled by App at the window level and does not naturally move
+    // focus first. Force a blur here so the old note's DOM is committed before App
+    // swaps in the fresh note; ordinary pointer navigation already blurs naturally.
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+      paper.current?.blur();
+      return;
+    }
+    continueChecklist(event);
+  };
+
   return <>
     <article
       className={`paper-editor markdown-preview${dragActive ? " drag-active" : ""}`}
@@ -472,7 +483,7 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
         applyShortcut(); scheduleCommit();
       }}
       onBlur={flushOnBlur}
-      onKeyDown={continueChecklist}
+      onKeyDown={handleKeyDown}
       onKeyUp={rememberSelection}
       onMouseUp={rememberSelection}
       onPointerDown={(event) => {
