@@ -91,16 +91,26 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
   const savedSelection = useRef<Range | null>(null);
   const pendingCommit = useRef<number | null>(null);
   const dirtySince = useRef<number | null>(null);
+  const pendingExternalValue = useRef<string | null>(null);
   const menuElement = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<Menu>(null);
 
+  const applyValue = (next: string) => {
+    if (!paper.current) return;
+    paper.current.innerHTML = renderMarkdown(next);
+    knownValue.current = next;
+    pendingExternalValue.current = null;
+  };
+
   useEffect(() => {
     if (!paper.current || value === knownValue.current) return;
-    // The DOM is the authoritative draft until its scheduled commit reaches React.
-    // Never let an async refresh replace text that the user has already typed.
-    if (pendingCommit.current !== null) return;
-    paper.current.innerHTML = renderMarkdown(value);
-    knownValue.current = value;
+    // The DOM is authoritative for as long as the user is actively editing. Even a
+    // legitimate sync refresh must not replace innerHTML under an active caret.
+    if (pendingCommit.current !== null || document.activeElement === paper.current) {
+      pendingExternalValue.current = value;
+      return;
+    }
+    applyValue(value);
   }, [value]);
 
   useEffect(() => {
@@ -134,6 +144,9 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
     if (!paper.current) return;
     const markdown = markdownFromPaper(paper.current);
     if (markdown === knownValue.current) return;
+    // A real local edit wins over an external value that arrived while the caret was
+    // active. React/storage will reconcile from this newer local draft instead.
+    pendingExternalValue.current = null;
     knownValue.current = markdown;
     onChange(markdown);
   };
@@ -151,6 +164,14 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
       pendingCommit.current = null;
       commit();
     }, delay);
+  };
+
+  const flushOnBlur = () => {
+    commit();
+    const pending = pendingExternalValue.current;
+    // If the user merely parked the caret while a remote/storage refresh arrived,
+    // apply it once focus leaves. If they edited, commit() cleared it and local wins.
+    if (pending !== null && pending !== knownValue.current) applyValue(pending);
   };
 
   useEffect(() => () => {
@@ -450,7 +471,7 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
         if ((event.target as HTMLElement).matches('input[type="checkbox"]')) return;
         applyShortcut(); scheduleCommit();
       }}
-      onBlur={commit}
+      onBlur={flushOnBlur}
       onKeyDown={continueChecklist}
       onKeyUp={rememberSelection}
       onMouseUp={rememberSelection}
