@@ -1,0 +1,44 @@
+/* Note toolbar geometry lives with the OS shell rather than the editor content. */
+@media (pointer: fine) and (min-width: 761px) {
+  .note-header .icon-button {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .note-header .icon-button svg {
+    width: 19px;
+    height: 19px;
+  }
+}
+
+/* Compact/sticky note mode previously shrank primary note actions to 32px.
+   Keep the chrome visually tight while restoring comfortable native tap targets. */
+:root[data-compact="true"] .note-header {
+  height: 54px;
+  min-height: 54px;
+  padding: 6px 7px;
+}
+
+:root[data-compact="true"] .mobile-back,
+:root[data-compact="true"] .note-actions .icon-button {
+  width: 42px;
+  height: 42px;
+}
+
+:root[data-compact="true"] .note-header .icon-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+:root[data-compact="true"] .note-actions {
+  gap: 2px;
+}
+
+@media (max-height: 360px) {
+  :root[data-compact="true"] .note-header {
+    height: 48px;
+    min-height: 48px;
+    padding-block: 3px;
+  }
+}
