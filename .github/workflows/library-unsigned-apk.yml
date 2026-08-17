@@ -1,52 +1,84 @@
-name: Library unsigned APK
+name: Library release APK
 
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: library-unsigned-apk-${{ github.ref }}
-  cancel-in-progress: true
+  group: library-release-apk
+  cancel-in-progress: false
 
 jobs:
+  gate:
+    name: Check Android release version
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.release.outputs.should_release }}
+      version: ${{ steps.release.outputs.version }}
+      latest: ${{ steps.release.outputs.latest }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compare tracked version with latest Library release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "latest=" >> "$GITHUB_OUTPUT"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Library releases are only produced from main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$RUNNER_TEMP/releases.json"
+
+          CURRENT="$CURRENT" RELEASES="$RUNNER_TEMP/releases.json" python3 <<'PY' > "$RUNNER_TEMP/gate.env"
+          import json, os, re
+          current_text = os.environ["CURRENT"]
+          hit = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", current_text)
+          if not hit:
+              raise SystemExit(f"tracked version must be stable X.Y.Z for Library release: {current_text}")
+          current = tuple(map(int, hit.groups()))
+          versions = []
+          for release in json.load(open(os.environ["RELEASES"])):
+              if release.get("draft") or release.get("prerelease"):
+                  continue
+              tag = release.get("tag_name", "")
+              # Papyrus used vX.Y.Z before adopting the shared android-vX.Y.Z convention.
+              match = re.fullmatch(r"(?:android-v|v)(\d+)\.(\d+)\.(\d+)", tag)
+              if match:
+                  versions.append((tuple(map(int, match.groups())), tag))
+          latest_version, latest_tag = max(versions, default=((0, 0, 0), ""))
+          print(f"latest={latest_tag}")
+          print(f"should_release={'true' if current > latest_version else 'false'}")
+          PY
+
+          cat "$RUNNER_TEMP/gate.env" >> "$GITHUB_OUTPUT"
+          . "$RUNNER_TEMP/gate.env"
+          echo "Papyrus Android version: $CURRENT; latest: ${latest:-<none>}; release: $should_release" >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    name: Build unsigned APK for Library
+    needs: gate
+    if: needs.gate.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Check Library release gate
-        id: release
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          CURRENT="$(jq -r '.version' src-tauri/tauri.conf.json)"
-          test -n "$CURRENT" && test "$CURRENT" != "null"
-
-          PREVIOUS=""
-          CHANGED=false
-          if [ "$EVENT_NAME" = "push" ]; then
-            if [ -n "${BEFORE_SHA:-}" ] && ! [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
-              PREVIOUS="$(git show "$BEFORE_SHA:src-tauri/tauri.conf.json" | jq -r '.version')"
-            fi
-            if [ "$CURRENT" != "$PREVIOUS" ]; then
-              CHANGED=true
-            fi
-          fi
-
-          echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
-          echo "version_changed=$CHANGED" >> "$GITHUB_OUTPUT"
-          echo "Papyrus version: ${PREVIOUS:-<none>} -> $CURRENT; publish candidate: $CHANGED" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/setup-node@v4
         with:
@@ -84,7 +116,11 @@ jobs:
         run: npx tauri android build --apk --target aarch64
 
       - name: Verify unsigned APK
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.gate.outputs.version }}
         run: |
+          set -euo pipefail
           APK="$(find src-tauri/gen/android/app/build/outputs/apk -name '*-release-unsigned.apk' -print -quit)"
           test -n "$APK"
           "$ANDROID_HOME/build-tools/36.0.0/aapt2" dump badging "$APK" | grep -q "package: name='com.papyrus.notes'"
@@ -93,13 +129,12 @@ jobs:
             exit 1
           fi
           mkdir -p library-artifact
-          cp "$APK" library-artifact/papyrus-release-unsigned.apk
+          cp "$APK" "library-artifact/papyrus-${RELEASE_VERSION}-release-unsigned.apk"
 
       - name: Upload unsigned APK for Library
-        if: github.event_name == 'push' && steps.release.outputs.version_changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: library-unsigned-apk
-          path: library-artifact/papyrus-release-unsigned.apk
+          path: library-artifact/*.apk
           if-no-files-found: error
           retention-days: 7
