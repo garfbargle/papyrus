@@ -1,8 +1,10 @@
 [package]
+# The crate name remains `papyrus` so the native executable and generated build
+# metadata stay compatible with existing tooling. The product name is Pad.
 name = "papyrus"
 version = "0.1.0"
 description = "A quiet local-first Markdown notebook"
-authors = ["Papyrus"]
+authors = ["Pad"]
 edition = "2021"
 
 [lib]

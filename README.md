@@ -1,6 +1,6 @@
 <div align="center">
 
-# ✦ Papyrus
+# ✦ Pad
 
 ### A quiet place for every thought.
 
@@ -13,17 +13,13 @@ Runs everywhere. Syncs end-to-end encrypted. Never waits on the network.
 [![End-to-end encrypted](https://img.shields.io/badge/sync-end--to--end_encrypted-49a479?style=flat-square&labelColor=3f3626)](#-your-notes-your-keys-nobody-elses-business)
 [![notes.c0di.com](https://img.shields.io/badge/web-notes.c0di.com-9d6d38?style=flat-square&labelColor=3f3626)](https://notes.c0di.com)
 
-![Papyrus — the app, showing a note about marketing the app](docs/screenshot.png)
-
-<sub>Yes, that screenshot is a note in Papyrus, about marketing Papyrus, written in Papyrus — and the theme swatches are an image pasted *into* that note. We're aware. It's fine.</sub>
-
 </div>
 
 ---
 
-## The pitch (which the app also wrote about itself)
+## The pitch
 
-Most notes apps want to become your operating system. Papyrus just wants to hold your thoughts and then get out of the way.
+Most notes apps want to become your operating system. Pad just wants to hold your thoughts and then get out of the way.
 
 It's a **paper-first** Markdown notebook. You type `## Heading` or `- [ ] Task` and it quietly becomes one — no toolbars to hunt, no blocks to summon. Every note is canonical Markdown living in a **local SQLite database on your own device**, so editing is instant, search is instant, and nothing you write is ever hostage to a spinner.
 
@@ -36,31 +32,31 @@ When you *want* your notes on another device, sync is **end-to-end encrypted** a
 ## ✦ What's in the box
 
 - **📝 Paper-first editor** — WYSIWYG feel, canonical Markdown underneath. Right-click for headings, lists, checklists, links, code, and images. There's a raw-source CodeMirror escape hatch for when you want to see the machinery.
-- **☑️ Checklists that actually behave** — `- [ ]` toggles, continues on Enter, and the caret lands exactly where you'd expect. (This sounds trivial. It was not trivial.)
+- **☑️ Checklists that actually behave** — `- [ ]` toggles, continues on Enter, and the caret lands exactly where you'd expect.
 - **⚡ Markdown shortcuts** — `## `, `- `, `1. `, `- [ ] ` auto-promote as you type.
 - **🗂️ Folders that make sense** — expandable tree, drag-and-drop notes between folders, reorder, rename, per-folder counts.
 - **🔍 Instant full-text search** — SQLite FTS, recency sorting, `⌘K` to jump, `⌘N` for a fresh page.
 - **🖼️ Inline images** — PNG, JPEG, GIF, WebP up to 4 MB, embedded as portable data URLs. Your Markdown stays a single self-contained file.
 - **📦 Whole-notebook export** — one ZIP, organized by folder, readable Markdown with YAML metadata. Your notes can always walk out the front door.
 - **🗑️ 30-day Trash** — restore, permanent delete, or empty. Mistakes get a grace period.
-- **🎨 7 themes, 3 fonts** — Papyrus (warm parchment with real paper-fiber grain), Mist, Graphite, Nord, Solarized, Dracula, Gruvbox.
-- **🔐 End-to-end encrypted sync** — QR pairing, immutable revisions, conflict review that *never overwrites* (Keep Current / Keep Other / Keep Both), device revocation.
-- **📴 Offline-first, always** — autosave, background sync every couple minutes and on focus, but editing never once waits for a network round-trip.
-- **📱 Genuinely cross-platform** — macOS, Windows, Linux, **native iOS and Android**, plus the web at [notes.c0di.com](https://notes.c0di.com).
+- **🎨 7 themes, 3 fonts** — Pad (warm parchment with paper-fiber grain), Mist, Graphite, Nord, Solarized, Dracula, Gruvbox.
+- **🔐 End-to-end encrypted sync** — QR pairing, immutable revisions, conflict review that never overwrites (Keep Current / Keep Other / Keep Both), device revocation.
+- **📴 Offline-first, always** — autosave, background sync every couple minutes and on focus, but editing never waits for a network round-trip.
+- **📱 Genuinely cross-platform** — macOS, Windows, Linux, native iOS and Android, plus the web at [notes.c0di.com](https://notes.c0di.com).
 
 ---
 
 ## 🔒 Your notes, your keys, nobody else's business
 
-Papyrus is local-first by conviction, not marketing.
+Pad is local-first by conviction, not marketing.
 
 - Every device keeps a **complete SQLite copy** of your notebook. The app is fully functional with the Wi-Fi off.
 - Notes are encrypted on-device with **XChaCha20-Poly1305**, signed with **Ed25519**, before anything touches the wire.
 - Pairing a new device does an **X25519** key exchange seeded by the QR secret, runs it through **HKDF-SHA256**, and hands the vault key straight from device to device. The relay is never in the loop.
 - Private keys live in your **OS keychain**; secrets are zeroized in memory after use.
-- The [sync relay](relay/README.md) is a Cloudflare Worker that stores only opaque IDs, ciphertext, acknowledgements, and expiry times. It is a very well-paid mail carrier that cannot read the mail.
+- The [sync relay](relay/README.md) is a Cloudflare Worker that stores only opaque IDs, ciphertext, acknowledgements, and expiry times.
 
-Even if you never turn sync on, Markdown export is always there. Papyrus is designed to be leaveable — which, paradoxically, is why you'll stay.
+Even if you never turn sync on, Markdown export is always there. Pad is designed to be leaveable — which, paradoxically, is why you'll stay.
 
 ---
 
@@ -68,7 +64,7 @@ Even if you never turn sync on, Markdown export is always there. Papyrus is desi
 
 | Layer | Tech |
 |---|---|
-| Shell | **Tauri 2** (Rust + system webview) — desktop *and* mobile |
+| Shell | **Tauri 2** (Rust + system webview) — desktop and mobile |
 | Frontend | **React 19** · TypeScript · Vite 6 |
 | Editors | Custom paper WYSIWYG · **CodeMirror 6** · markdown-it |
 | Storage | **SQLite** (bundled, via rusqlite) with FTS |
@@ -98,7 +94,7 @@ Package a native macOS app:
 
 ```sh
 npx tauri build --bundles app
-# → src-tauri/target/release/bundle/macos/Papyrus.app
+# → src-tauri/target/release/bundle/macos/Pad.app
 ```
 
 Deploy the web app and sync relay (after authenticating with Cloudflare):
@@ -114,10 +110,16 @@ See [`relay/README.md`](relay/README.md) for failure simulation, testing, and de
 
 ---
 
+## Rebrand compatibility
+
+Pad was previously named Papyrus. Existing app IDs, storage names, keychain services, pairing/wire constants, Cloudflare resources, environment variables, and a few build identifiers intentionally retain `papyrus` so current installs and paired devices keep working.
+
+See [`BRANDING.md`](BRANDING.md) before changing any remaining `papyrus` identifier.
+
+---
+
 <div align="center">
 
-**Papyrus** — write it down, keep it yours.
-
-<sub>This README was drafted in a notes app, about a notes app, and the last checkbox on its to-do list is still unchecked until you clone it.</sub>
+**Pad** — write it down, keep it yours.
 
 </div>

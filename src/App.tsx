@@ -14,13 +14,14 @@ import type { Category, Note, NoteConflict, NoteListItem, SyncStatus } from "./t
 type NoteView = "notes" | "trash";
 type ListMode = "all" | "folders";
 type MobileScreen = "list" | "note";
+// `papyrus` is the persisted legacy theme id; its public name is Pad.
 type ThemeId = "papyrus" | "mist" | "graphite" | "nord" | "solarized" | "dracula" | "gruvbox";
 type FontId = "inter" | "manrope" | "dm-sans";
 
 const MarkdownEditor = lazy(() => import("./components/MarkdownEditor"));
 
 const themes: { id: ThemeId; name: string; description: string; colors: [string, string, string] }[] = [
-  { id: "papyrus", name: "Papyrus", description: "Warm parchment and sepia", colors: ["#f9f2e6", "#f4ecdc", "#9d6d38"] },
+  { id: "papyrus", name: "Pad", description: "Warm parchment and sepia", colors: ["#f9f2e6", "#f4ecdc", "#9d6d38"] },
   { id: "mist", name: "Mist", description: "Cool grey and white", colors: ["#f6f7f9", "#eef1f5", "#5d6a7d"] },
   { id: "graphite", name: "Graphite", description: "Near-black night mode", colors: ["#191a1d", "#22242a", "#c7d0de"] },
   { id: "nord", name: "Nord", description: "Calm blue-grey", colors: ["#eceff4", "#e5e9f0", "#5e81ac"] },
@@ -170,7 +171,7 @@ function App() {
         if (savedMode === "all" || savedMode === "folders") setMode(savedMode);
         if (!forceNewNote && welcomeNoteId) await openNote(welcomeNoteId);
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Papyrus could not open the notebook.");
+        setNotice(error instanceof Error ? error.message : "Pad could not open the notebook.");
       } finally { setLoading(false); }
     })();
   }, []);
@@ -205,7 +206,7 @@ function App() {
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(null), 4000);
-    return () => clearTimeout(timer);
+    return () => window.clearTimeout(timer);
   }, [notice]);
 
   useEffect(() => {
@@ -516,7 +517,7 @@ function App() {
 
   const exportNotebook = async () => {
     try {
-      const destination = await save({ defaultPath: "Papyrus Notes.zip", filters: [{ name: "ZIP archive", extensions: ["zip"] }] });
+      const destination = await save({ defaultPath: "Pad Notes.zip", filters: [{ name: "ZIP archive", extensions: ["zip"] }] });
       if (destination) { await api.exportNotebook(destination); setNotice("Notebook exported"); }
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not export notebook."); }
   };
@@ -568,7 +569,7 @@ function App() {
     <main className={`app ${railCollapsed ? "rail-collapsed" : ""} ${mobileScreen === "note" ? "show-note" : "show-list"}`}>
       <aside className="rail">
         <div className="rail-head">
-          <div className="brand"><span>Papyrus</span></div>
+          <div className="brand"><span>Pad</span></div>
           <button className="new-note-button" onClick={createNote}><Icon name="plus" size={16} /><span>New note</span></button>
         </div>
 
