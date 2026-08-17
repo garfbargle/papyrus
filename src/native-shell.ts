@@ -18,7 +18,8 @@ function syncSystemBars() {
 
 function installNativeShare() {
   const bridge = window.PadNative;
-  if (!bridge?.shareText || navigator.share) return;
+  const hasWebShare = "share" in navigator && typeof navigator.share === "function";
+  if (!bridge?.shareText || hasWebShare) return;
 
   // Android WebView does not expose the Web Share API to Tauri. Provide the
   // same browser-facing contract so the existing Share button opens the real
