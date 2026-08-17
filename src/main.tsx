@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
+import "./system-theme.css";
 
 // Mobile browsers report `100vh` as the *large* viewport (URL bar hidden), so a
 // full-height layout is taller than what's actually on screen while the toolbar

@@ -1,0 +1,741 @@
+/*
+ * Garfbargle OS visual system
+ *
+ * Papyrus keeps its notebook themes for content personality. This layer owns the
+ * shared operating-system chrome. Change --system-accent once to retint every
+ * interactive accent state without altering materials, typography, or geometry.
+ *
+ * Semantic token map:
+ * material.chrome   -> --material-chrome
+ * material.content  -> --material-content
+ * material.raised   -> --material-raised
+ * material.opaque   -> --material-opaque
+ * text.primary      -> --text-primary
+ * text.secondary    -> --text-secondary
+ * text.tertiary     -> --text-tertiary
+ * border.subtle     -> --border-subtle
+ * border.standard   -> --border-standard
+ * control.fill      -> --control-fill
+ * control.hover     -> --control-hover
+ * control.pressed   -> --control-pressed
+ * accent.primary    -> --accent-primary
+ * accent.secondary  -> --accent-secondary
+ * accent.selection  -> --accent-selection
+ * accent.focus      -> --accent-focus
+ * radius.small      -> --radius-small
+ * radius.control    -> --radius-control
+ * radius.surface    -> --radius-surface
+ * radius.hero       -> --radius-hero
+ * motion.fast       -> --motion-fast
+ * motion.standard   -> --motion-standard
+ * motion.spring     -> --motion-spring
+ */
+
+:root {
+  --system-accent: #0a84ff;
+
+  --material-chrome: color-mix(in srgb, var(--paper) 74%, transparent);
+  --material-content: color-mix(in srgb, var(--paper) 96%, transparent);
+  --material-raised: color-mix(in srgb, var(--paper) 88%, transparent);
+  --material-opaque: var(--paper);
+
+  --text-primary: var(--ink);
+  --text-secondary: var(--muted);
+  --text-tertiary: var(--soft);
+
+  --border-subtle: color-mix(in srgb, var(--ink) 7%, transparent);
+  --border-standard: color-mix(in srgb, var(--ink) 12%, transparent);
+
+  --control-fill: color-mix(in srgb, var(--ink) 6%, transparent);
+  --control-hover: color-mix(in srgb, var(--ink) 10%, transparent);
+  --control-pressed: color-mix(in srgb, var(--ink) 15%, transparent);
+
+  --accent-primary: var(--system-accent);
+  --accent-secondary: color-mix(in srgb, var(--system-accent) 72%, white);
+  --accent-selection: color-mix(in srgb, var(--system-accent) 14%, transparent);
+  --accent-focus: color-mix(in srgb, var(--system-accent) 30%, transparent);
+
+  --radius-small: 8px;
+  --radius-control: 12px;
+  --radius-surface: 16px;
+  --radius-hero: 22px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --type-caption: 10px;
+  --type-meta: 11px;
+  --type-body: 13px;
+  --type-heading: 15px;
+  --type-title: 28px;
+
+  --motion-fast: 130ms;
+  --motion-standard: 220ms;
+  --motion-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --motion-ease: cubic-bezier(.22, 1, .36, 1);
+
+  --shadow-low: 0 1px 2px color-mix(in srgb, #000 7%, transparent), 0 3px 10px color-mix(in srgb, #000 5%, transparent);
+  --shadow-raised: 0 2px 8px color-mix(in srgb, #000 8%, transparent), 0 14px 34px color-mix(in srgb, #000 12%, transparent);
+  --shadow-dialog: 0 10px 24px color-mix(in srgb, #000 16%, transparent), 0 30px 80px color-mix(in srgb, #000 22%, transparent);
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono-ui: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Keep every notebook palette neutral with one OS-owned accent. */
+:root,
+:root[data-theme="papyrus"],
+:root[data-theme="mist"],
+:root[data-theme="graphite"],
+:root[data-theme="nord"],
+:root[data-theme="solarized"],
+:root[data-theme="dracula"],
+:root[data-theme="gruvbox"] {
+  --accent: var(--accent-primary);
+  --accent-soft: var(--accent-selection);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent-primary) 24%, transparent);
+}
+
+.app,
+.rail,
+.note-header,
+.rail-head,
+.rail-footer,
+.segmented,
+.search,
+.note-row,
+.folder-head,
+.nav-item,
+.sidebar-sync,
+.icon-button,
+.pop-menu,
+.paper-menu,
+.settings-overlay,
+.settings-topbar,
+.settings,
+.theme-card,
+.font-option,
+.sync-section,
+.device-row,
+.primary-button,
+.secondary-button,
+.text-action,
+.scan-button,
+.pair-dialog,
+.conflict-dialog,
+.toast {
+  font-family: var(--font-ui);
+}
+
+/* Layer 1: window/content. Keep the full-size plane calm and mostly opaque. */
+.app {
+  background: var(--material-content);
+  color: var(--text-primary);
+}
+
+.note-pane {
+  background: var(--material-content);
+}
+
+/* Layer 2: native chrome. Blur only where material hierarchy benefits from it. */
+.rail {
+  background: var(--material-chrome);
+  border-color: var(--border-subtle);
+  -webkit-backdrop-filter: blur(28px) saturate(1.16);
+  backdrop-filter: blur(28px) saturate(1.16);
+}
+
+.rail-head {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--paper) 11%, transparent), transparent);
+}
+
+.rail-footer {
+  border-color: var(--border-subtle);
+  background: color-mix(in srgb, var(--material-chrome) 82%, transparent);
+}
+
+.note-header,
+.settings-topbar {
+  border-color: var(--border-subtle);
+  background: var(--material-chrome);
+  -webkit-backdrop-filter: blur(24px) saturate(1.14);
+  backdrop-filter: blur(24px) saturate(1.14);
+}
+
+.brand {
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-weight: 720;
+  letter-spacing: -.035em;
+}
+
+/* Shared control behavior */
+button,
+input,
+textarea,
+[role="button"],
+.note-row,
+.folder-head,
+.theme-card,
+.font-option {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+.note-row,
+.folder-head,
+.theme-card,
+.font-option,
+.search,
+.device-row,
+.scan-button {
+  transition:
+    background-color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease),
+    opacity var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-spring);
+}
+
+button:active:not(:disabled),
+.note-row:active,
+.theme-card:active,
+.font-option:active,
+.scan-button:active {
+  transform: scale(.985);
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+:is(button, input, textarea, [tabindex]):focus-visible,
+.search:focus-within {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--accent-focus);
+}
+
+/* Accent-bearing actions */
+.new-note-button,
+.primary-button {
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 76%, #000);
+  border-radius: var(--radius-control);
+  color: #fff;
+  background: var(--accent-primary);
+  box-shadow: 0 1px 1px color-mix(in srgb, #000 10%, transparent), 0 4px 12px color-mix(in srgb, var(--accent-primary) 18%, transparent);
+  font-weight: 680;
+}
+
+.new-note-button:hover,
+.primary-button:hover {
+  background: color-mix(in srgb, var(--accent-primary) 90%, white);
+}
+
+.new-note-button:active:not(:disabled),
+.primary-button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-primary) 86%, black);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 12%, transparent);
+}
+
+.secondary-button {
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: var(--control-fill);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 25%, transparent);
+}
+
+.secondary-button:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 16%, var(--border-standard));
+  background: var(--control-hover);
+}
+
+.secondary-button:active:not(:disabled) {
+  background: var(--control-pressed);
+}
+
+.text-button,
+.text-action {
+  color: var(--accent-primary);
+}
+
+/* Compact native segmented controls */
+.segmented,
+.mode-switch {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+  box-shadow: inset 0 1px 1px color-mix(in srgb, #000 4%, transparent);
+}
+
+.segmented button,
+.mode-switch button {
+  border-radius: calc(var(--radius-control) - 4px);
+}
+
+.segmented button:hover,
+.mode-switch button:hover {
+  background: var(--control-hover);
+}
+
+.segmented button.active,
+.mode-switch button.selected {
+  color: var(--accent-primary);
+  background: var(--material-raised);
+  box-shadow: var(--shadow-low), inset 0 0 0 1px var(--border-subtle);
+}
+
+/* Search is a pill-sized system field rather than a decorative glass card. */
+.search {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  background: var(--control-fill);
+}
+
+.search:hover {
+  background: var(--control-hover);
+}
+
+.search:focus-within {
+  border-color: color-mix(in srgb, var(--accent-primary) 58%, transparent);
+  background: var(--material-raised);
+}
+
+.search input {
+  color: var(--text-primary);
+}
+
+.search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+kbd {
+  border-color: var(--border-subtle);
+  border-radius: 5px;
+  color: var(--text-tertiary);
+  background: color-mix(in srgb, var(--control-fill) 82%, transparent);
+  font-family: var(--font-mono-ui);
+}
+
+/* Sidebar navigation and selection */
+.note-row,
+.folder-head,
+.nav-item,
+.sidebar-sync,
+.add-folder,
+.trash-back {
+  border-radius: var(--radius-small);
+}
+
+.note-row:hover,
+.folder-head:hover,
+.nav-item:hover,
+.sidebar-sync:hover,
+.add-folder:hover,
+.trash-back:hover {
+  background: var(--control-hover);
+}
+
+.note-row.selected,
+.folder-head.active,
+.nav-item.active,
+.folder-head.drop-target,
+.unfiled-dropzone.drop-target,
+.folder-rename {
+  color: var(--accent-primary);
+  background: var(--accent-selection);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 10%, transparent);
+}
+
+.note-row.selected .note-row-title {
+  color: var(--text-primary);
+}
+
+.note-row-preview,
+.note-row-meta,
+.note-breadcrumb,
+.sidebar-sync,
+.nav-item svg {
+  color: var(--text-secondary);
+}
+
+.note-row-meta,
+.folder-count,
+.folder-empty {
+  color: var(--text-tertiary);
+}
+
+.folder-head.active .folder-toggle,
+.folder-head.active .folder-icon,
+.folder-head.active .chevron,
+.nav-item.active,
+.nav-item.active svg,
+.add-folder:hover,
+.add-folder:hover svg {
+  color: var(--accent-primary);
+}
+
+/* Toolbar primitives */
+.icon-button,
+.folder-add,
+.folder-more,
+.format-tools button,
+.dialog-close,
+.remove-device {
+  border-radius: var(--radius-small);
+}
+
+.icon-button:hover,
+.folder-add:hover,
+.folder-more:hover,
+.format-tools button:hover,
+.dialog-close:hover {
+  color: var(--text-primary);
+  background: var(--control-hover);
+}
+
+.icon-button:active:not(:disabled),
+.folder-add:active:not(:disabled),
+.folder-more:active:not(:disabled),
+.format-tools button:active:not(:disabled),
+.dialog-close:active:not(:disabled) {
+  background: var(--control-pressed);
+}
+
+/* Layer 3/4: raised surfaces and popovers */
+.pop-menu,
+.sub-menu,
+.paper-menu {
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-control);
+  background: var(--material-raised);
+  box-shadow: var(--shadow-raised);
+  -webkit-backdrop-filter: blur(26px) saturate(1.12);
+  backdrop-filter: blur(26px) saturate(1.12);
+}
+
+.pop-menu button,
+.paper-menu button {
+  border-radius: var(--radius-small);
+}
+
+.pop-menu button:hover,
+.paper-menu button:hover {
+  background: var(--control-hover);
+}
+
+.pop-menu button:active:not(:disabled),
+.paper-menu button:active:not(:disabled) {
+  background: var(--control-pressed);
+}
+
+.source-surface {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--material-raised) 84%, var(--paper-warm));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 15%, transparent);
+}
+
+.document.split {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-surface);
+}
+
+/* Editor/UI boundaries inherit the system accent but retain the note's typography. */
+.cm-content,
+.paper-editor {
+  caret-color: var(--accent-primary);
+}
+
+.cm-activeLine,
+.cm-activeLineGutter {
+  background: color-mix(in srgb, var(--accent-selection) 62%, transparent) !important;
+}
+
+.cm-selectionBackground,
+.cm-content ::selection {
+  background: color-mix(in srgb, var(--accent-primary) 24%, transparent) !important;
+}
+
+.markdown-preview a,
+.markdown-preview blockquote {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.markdown-preview input[type="checkbox"]:checked {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+}
+
+/* Settings: content is calm/opaque, controls carry the OS material language. */
+.settings-overlay {
+  background: var(--material-opaque);
+}
+
+.settings {
+  max-width: 700px;
+  margin-top: 34px;
+}
+
+.settings header {
+  border-color: var(--border-subtle);
+}
+
+.settings h1 {
+  margin-top: 5px;
+  font-size: var(--type-title);
+  font-weight: 720;
+  letter-spacing: -.045em;
+}
+
+.settings header p {
+  max-width: 520px;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+}
+
+.settings section {
+  min-height: 76px;
+  border-color: var(--border-subtle);
+}
+
+.settings section span {
+  color: var(--text-secondary);
+}
+
+.eyebrow,
+.dialog-kicker {
+  color: var(--accent-primary);
+}
+
+.theme-card,
+.font-option,
+.device-row {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--material-raised);
+  box-shadow: 0 1px 0 color-mix(in srgb, white 12%, transparent);
+}
+
+.theme-card:hover,
+.font-option:hover,
+.device-row:hover {
+  border-color: var(--border-standard);
+  background: color-mix(in srgb, var(--material-raised) 82%, var(--control-hover));
+  transform: translateY(-1px);
+}
+
+.theme-card.selected,
+.font-option.selected {
+  border-color: color-mix(in srgb, var(--accent-primary) 44%, var(--border-subtle));
+  background: var(--accent-selection);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 8%, transparent);
+}
+
+.theme-card > svg,
+.font-option svg {
+  color: var(--accent-primary);
+}
+
+/* Theme cards preview backgrounds; accent is intentionally global, not palette-specific. */
+.theme-preview {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-small);
+}
+
+.theme-preview b {
+  background: var(--accent-primary) !important;
+}
+
+.settings .sync-section {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: color-mix(in srgb, var(--material-raised) 86%, var(--paper-warm));
+  box-shadow: var(--shadow-low);
+}
+
+.settings-icon,
+.device-glyph {
+  border-radius: var(--radius-control);
+}
+
+.settings-icon {
+  color: var(--accent-primary) !important;
+  background: var(--accent-selection);
+}
+
+.device-name-row input,
+.pair-code-input {
+  border-color: var(--border-standard);
+  border-radius: var(--radius-control);
+  background: var(--control-fill);
+}
+
+.device-name-row input:hover,
+.pair-code-input:hover {
+  background: var(--control-hover);
+}
+
+.device-name-row input:focus,
+.pair-code-input:focus {
+  border-color: color-mix(in srgb, var(--accent-primary) 56%, transparent);
+  background: var(--material-raised);
+}
+
+.text-action:hover {
+  background: var(--accent-selection);
+}
+
+/* Notices/status rows use accent where state is non-semantic; errors/warnings keep meaning. */
+.sidebar-sync b,
+.status-pill i,
+.sidebar-sync i.syncing,
+.sync-state.syncing i {
+  color: var(--accent-primary);
+  background: var(--accent-primary);
+}
+
+.sidebar-sync b {
+  background: var(--accent-selection);
+}
+
+.sync-attention {
+  border-radius: var(--radius-small);
+}
+
+/* Layer 5: dialogs/sheets */
+.modal-backdrop {
+  background: color-mix(in srgb, #10131a 46%, transparent);
+  -webkit-backdrop-filter: blur(13px) saturate(.92);
+  backdrop-filter: blur(13px) saturate(.92);
+  animation-duration: var(--motion-fast);
+}
+
+.pair-dialog,
+.conflict-dialog {
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-hero);
+  background: color-mix(in srgb, var(--material-opaque) 92%, transparent);
+  box-shadow: var(--shadow-dialog);
+  -webkit-backdrop-filter: blur(30px) saturate(1.1);
+  backdrop-filter: blur(30px) saturate(1.1);
+  animation-duration: var(--motion-standard);
+}
+
+.scan-button {
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-surface);
+  background: var(--control-fill);
+}
+
+.scan-button:hover {
+  border-color: color-mix(in srgb, var(--accent-primary) 34%, var(--border-standard));
+  background: var(--accent-selection);
+}
+
+.scan-corners i {
+  border-color: var(--accent-primary);
+}
+
+.qr-frame {
+  border-radius: var(--radius-surface);
+  box-shadow: 0 0 0 1px var(--border-subtle), var(--shadow-raised);
+}
+
+.toast {
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-control);
+  background: var(--material-raised);
+  box-shadow: var(--shadow-raised);
+  -webkit-backdrop-filter: blur(24px) saturate(1.12);
+  backdrop-filter: blur(24px) saturate(1.12);
+}
+
+.toast svg {
+  color: var(--accent-primary);
+}
+
+/* Tactile polish for elevated cards and banners without turning them into glass decoration. */
+.trashed-note {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-surface);
+  background: color-mix(in srgb, var(--material-raised) 76%, var(--paper-warm));
+  box-shadow: var(--shadow-low);
+}
+
+.conflict-banner {
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-low);
+}
+
+/* Keep the compact embedded-note treatment native to the same material stack. */
+:root[data-compact="true"] .rail,
+:root[data-compact="true"] .note-header {
+  background: var(--material-chrome);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+
+:root[data-compact="true"] .new-note-button {
+  border-radius: 50%;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent-primary) 20%, transparent);
+}
+
+@media (max-width: 700px) {
+  .settings {
+    margin-top: 26px;
+  }
+
+  .settings h1 {
+    font-size: 30px;
+  }
+
+  .pair-dialog,
+  .conflict-dialog {
+    border-radius: var(--radius-hero) var(--radius-hero) 0 0;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .rail,
+  .note-header,
+  .settings-topbar,
+  .pop-menu,
+  .sub-menu,
+  .paper-menu,
+  .pair-dialog,
+  .conflict-dialog,
+  .toast {
+    background: var(--material-opaque);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 1ms;
+    --motion-standard: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
