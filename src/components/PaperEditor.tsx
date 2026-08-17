@@ -11,6 +11,8 @@ type Props = {
 };
 
 const blockSelector = "p, h1, h2, h3, h4, h5, h6, li, blockquote, pre";
+const commitDelay = 120;
+const maxCommitDelay = 400;
 
 function inlineMarkdown(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent || "").replace(/\uFEFF/g, "");
@@ -87,13 +89,34 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
   // Start unset so a note opened directly into paper mode is rendered on mount.
   const knownValue = useRef<string | null>(null);
   const savedSelection = useRef<Range | null>(null);
+  const pendingCommit = useRef<number | null>(null);
+  const dirtySince = useRef<number | null>(null);
+  const pendingExternalValue = useRef<string | null>(null);
   const menuElement = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<Menu>(null);
 
+  const applyValue = (next: string) => {
+    if (!paper.current) return;
+    paper.current.innerHTML = renderMarkdown(next);
+    knownValue.current = next;
+    pendingExternalValue.current = null;
+  };
+
   useEffect(() => {
-    if (!paper.current || value === knownValue.current) return;
-    paper.current.innerHTML = renderMarkdown(value);
-    knownValue.current = value;
+    if (!paper.current) return;
+    if (value === knownValue.current) {
+      // A newer local React update may have caught up after an external value was
+      // deferred. Do not leave that superseded external snapshot queued for blur.
+      pendingExternalValue.current = null;
+      return;
+    }
+    // The DOM is authoritative for as long as the user is actively editing. Even a
+    // legitimate sync refresh must not replace innerHTML under an active caret.
+    if (pendingCommit.current !== null || document.activeElement === paper.current) {
+      pendingExternalValue.current = value;
+      return;
+    }
+    applyValue(value);
   }, [value]);
 
   useEffect(() => {
@@ -119,11 +142,47 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
   }, [menu]);
 
   const commit = () => {
+    if (pendingCommit.current !== null) {
+      window.clearTimeout(pendingCommit.current);
+      pendingCommit.current = null;
+    }
+    dirtySince.current = null;
     if (!paper.current) return;
     const markdown = markdownFromPaper(paper.current);
+    if (markdown === knownValue.current) return;
+    // A real local edit wins over an external value that arrived while the caret was
+    // active. React/storage will reconcile from this newer local draft instead.
+    pendingExternalValue.current = null;
     knownValue.current = markdown;
     onChange(markdown);
   };
+
+  // DOM → Markdown serialization walks the full document. Keep it off the immediate
+  // input/keydown path and coalesce a burst of keystrokes, but cap the delay so the
+  // React model and autosave never trail a long typing session by more than ~400ms.
+  const scheduleCommit = () => {
+    const now = performance.now();
+    if (dirtySince.current === null) dirtySince.current = now;
+    if (pendingCommit.current !== null) window.clearTimeout(pendingCommit.current);
+    const elapsed = now - dirtySince.current;
+    const delay = elapsed >= maxCommitDelay ? 0 : Math.min(commitDelay, maxCommitDelay - elapsed);
+    pendingCommit.current = window.setTimeout(() => {
+      pendingCommit.current = null;
+      commit();
+    }, delay);
+  };
+
+  const flushOnBlur = () => {
+    commit();
+    const pending = pendingExternalValue.current;
+    // If the user merely parked the caret while a remote/storage refresh arrived,
+    // apply it once focus leaves. If they edited, commit() cleared it and local wins.
+    if (pending !== null && pending !== knownValue.current) applyValue(pending);
+  };
+
+  useEffect(() => () => {
+    if (pendingCommit.current !== null) window.clearTimeout(pendingCommit.current);
+  }, []);
 
   // Insert dropped/pasted images at the caret. `caret` places the caret first (used by
   // drop, where the caret should land where the file was released).
@@ -143,18 +202,25 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
         onNotice?.(error instanceof Error ? error.message : "Could not add that image.");
       }
     }
-    requestAnimationFrame(commit);
+    scheduleCommit();
   };
 
   const rememberSelection = () => {
     const selection = window.getSelection();
-    if (selection?.rangeCount) savedSelection.current = selection.getRangeAt(0).cloneRange();
+    if (!paper.current || !selection?.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    const ancestor = range.commonAncestorContainer;
+    if (ancestor !== paper.current && !paper.current.contains(ancestor)) return;
+    savedSelection.current = range.cloneRange();
   };
 
   const restoreSelection = () => {
     const selection = window.getSelection();
-    if (!selection || !savedSelection.current) return;
-    selection.removeAllRanges(); selection.addRange(savedSelection.current);
+    const range = savedSelection.current;
+    if (!selection || !range || !paper.current) return;
+    const ancestor = range.commonAncestorContainer;
+    if (ancestor !== paper.current && !paper.current.contains(ancestor)) return;
+    selection.removeAllRanges(); selection.addRange(range);
   };
 
   const selectedBlock = () => {
@@ -293,11 +359,11 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
         const text = await navigator.clipboard.readText();
         if (text) document.execCommand("insertText", false, text);
       } catch { onNotice?.("Pasting isn't available here — try a long-press paste."); }
-      requestAnimationFrame(commit);
+      scheduleCommit();
       return;
     }
     try { document.execCommand(command); } catch { onNotice?.(command === "cut" ? "Couldn't cut that selection." : "Couldn't copy that selection."); }
-    if (command === "cut") requestAnimationFrame(commit);
+    if (command === "cut") scheduleCommit();
   };
 
   type Command = "p" | "h1" | "h2" | "h3" | "bold" | "italic" | "link" | "code" | "bullets" | "numbers" | "checklist" | "image" | "cut" | "copy" | "paste" | "selectall";
@@ -321,7 +387,7 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
       const image = await onInsertImage();
       if (image) document.execCommand("insertImage", false, image);
     } else document.execCommand("formatBlock", false, command);
-    setMenu(null); requestAnimationFrame(commit);
+    setMenu(null); scheduleCommit();
   };
 
   const applyShortcut = () => {
@@ -355,7 +421,7 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
       const paragraph = document.createElement("p");
       const cursor = document.createTextNode("\uFEFF");
       paragraph.append(cursor, trailing.extractContents()); item.after(paragraph);
-      placeCaretInText(cursor); commit(); return;
+      placeCaretInText(cursor); scheduleCommit(); return;
     }
     if (item?.tagName !== "LI" || !item.querySelector('input[type="checkbox"]')) return;
     const list = item.parentElement;
@@ -366,12 +432,23 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
       const paragraph = document.createElement("p"); const cursor = document.createTextNode("\uFEFF");
       paragraph.append(cursor); item.remove();
       if (list.children.length) list.after(paragraph); else list.replaceWith(paragraph);
-      placeCaretInText(cursor); commit(); return;
+      placeCaretInText(cursor); scheduleCommit(); return;
     }
     const next = document.createElement("li"); const check = document.createElement("input");
     const cursor = document.createTextNode("\uFEFF");
     next.className = "task-list-item"; check.type = "checkbox"; check.contentEditable = "false";
-    next.append(check, cursor); list.insertBefore(next, item.nextSibling); placeCaretInText(cursor); commit();
+    next.append(check, cursor); list.insertBefore(next, item.nextSibling); placeCaretInText(cursor); scheduleCommit();
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    // Cmd/Ctrl+N is handled by App at the window level and does not naturally move
+    // focus first. Force a blur here so the old note's DOM is committed before App
+    // swaps in the fresh note; ordinary pointer navigation already blurs naturally.
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
+      paper.current?.blur();
+      return;
+    }
+    continueChecklist(event);
   };
 
   return <>
@@ -409,9 +486,10 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
         // A checkbox toggle bubbles an input event whose caret sits outside any block;
         // running the shortcut pass there would reflow the document. It commits via onClick.
         if ((event.target as HTMLElement).matches('input[type="checkbox"]')) return;
-        applyShortcut(); commit();
+        applyShortcut(); scheduleCommit();
       }}
-      onKeyDown={continueChecklist}
+      onBlur={flushOnBlur}
+      onKeyDown={handleKeyDown}
       onKeyUp={rememberSelection}
       onMouseUp={rememberSelection}
       onPointerDown={(event) => {
@@ -423,7 +501,7 @@ export default function PaperEditor({ value, onChange, onInsertImage, onNotice }
       }}
       onClick={(event) => {
         if (!(event.target as HTMLElement).matches('input[type="checkbox"]')) return;
-        window.setTimeout(commit, 0);
+        scheduleCommit();
       }}
       onContextMenu={(event) => { event.preventDefault(); rememberSelection(); setMenu({ left: event.clientX, top: event.clientY }); }}
     />
