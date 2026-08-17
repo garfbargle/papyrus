@@ -205,22 +205,22 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
         {pairView === "host" && <>
           <span className="dialog-kicker">Add a device</span><h2 id="pair-title">Scan to pair</h2>
           <p>{pairMessage}</p>
-          <div className="qr-frame">{qrCode ? <img src={qrCode} alt="One-time Papyrus pairing QR code" /> : <span>Creating code…</span>}</div>
+          <div className="qr-frame">{qrCode ? <img src={qrCode} alt="One-time Pad pairing QR code" /> : <span>Creating code…</span>}</div>
           <div className="pair-expiry"><i />Code expires in about 5 minutes and works once.</div>
           <button className="secondary-button wide" onClick={() => void copyPairingCode()}><Icon name="copy" size={16} />Copy code instead</button>
           <label className="pair-code-fallback"><span>Or select this code to paste on the new device</span><textarea className="pair-code-input" aria-label="Pairing code" rows={3} value={offer?.code || ""} readOnly autoCapitalize="off" autoCorrect="off" spellCheck={false} /></label>
         </>}
         {pairView === "join" && <>
           <span className="dialog-kicker">Pair this device</span><h2 id="pair-title">Bring your notebook here</h2>
-          <p>Scan the one-time code shown on your other Papyrus device, or paste it below.</p>
+          <p>Scan the one-time code shown on your other Pad device, or paste it below.</p>
           <p className="pair-merge-note">Nothing is replaced: the notes already on this device join that notebook, and sync out to its other devices.</p>
           <button className="scan-button" disabled={busy} onClick={() => void scanCode()}><span className="scan-corners"><i /><i /><i /><i /></span><strong>Scan QR code</strong><small>Uses your camera only for this scan</small></button>
           <div className="pair-divider"><span>or paste the code</span></div>
-          <textarea className="pair-code-input" rows={3} value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="papyrus-pair-v1:…" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+          <textarea className="pair-code-input" rows={3} value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Paste pairing code…" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
           <button className="primary-button wide pair-continue" disabled={busy || !joinCode.trim()} onClick={() => void submitJoin()}>{busy ? "Connecting…" : "Continue"}</button>
         </>}
         {pairView === "waiting" && <div className="pair-waiting">
-          <span className="waiting-pulse"><i /><i /><i /></span><span className="dialog-kicker">Secure handoff</span><h2 id="pair-title">Almost there</h2><p>{pairMessage}</p><small>Keep Papyrus open on both devices for a moment.</small>
+          <span className="waiting-pulse"><i /><i /><i /></span><span className="dialog-kicker">Secure handoff</span><h2 id="pair-title">Almost there</h2><p>{pairMessage}</p><small>Keep Pad open on both devices for a moment.</small>
         </div>}
       </div>
     </div>}
@@ -228,7 +228,7 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
     {revoke && <div className="modal-backdrop" role="presentation">
       <div className="pair-dialog compact" role="alertdialog" aria-modal="true" aria-labelledby="revoke-title">
         <span className="dialog-kicker danger">Remove device</span><h2 id="revoke-title">Remove {revoke.displayName}?</h2>
-        <p>It will stop receiving new changes. Papyrus cannot erase notes that were already downloaded to that device.</p>
+        <p>It will stop receiving new changes. Pad cannot erase notes that were already downloaded to that device.</p>
         <div className="dialog-actions"><button className="secondary-button" onClick={() => setRevoke(null)}>Cancel</button><button className="danger-button" disabled={busy} onClick={() => void removeDevice()}>{busy ? "Removing…" : "Remove Device"}</button></div>
       </div>
     </div>}

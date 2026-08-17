@@ -2,18 +2,23 @@ import { invoke as invokeCommand } from "@tauri-apps/api/core";
 import type { Category, Note, NoteConflict, NoteListItem, PairingOffer, PairingProgress, SavePayload, SyncStatus } from "../types";
 import * as webSync from "./sync";
 
+const brandMessage = (message: string) => message.replaceAll("Papyrus", "Pad");
+
 // Tauri commands reject with a bare string, because the native error type is
 // `Result<T, String>`. Callers test `error instanceof Error` and fall back to a
 // generic message when it fails, which silently discards every message the
-// native side wrote. Rewrap so the real reason survives the boundary.
+// native side wrote. Rewrap so the real reason survives the boundary. Native
+// compatibility strings may still use the former brand internally, so normalize
+// only the human-readable message as it crosses into Pad's UI.
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return invokeCommand<T>(command, args).catch((error: unknown) => {
-    if (error instanceof Error) throw error;
-    throw new Error(typeof error === "string" ? error : JSON.stringify(error));
+    if (error instanceof Error) throw new Error(brandMessage(error.message));
+    throw new Error(brandMessage(typeof error === "string" ? error : JSON.stringify(error)));
   });
 }
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+// Legacy storage key: changing it would discard existing browser preferences.
 const preferencesKey = "papyrus-browser-preferences-v1";
 
 function readPreferences(): Record<string, string> {
@@ -97,7 +102,7 @@ export const api = {
     return invoke<void>("export_notebook", { destination });
   },
   async embedImage(path: string): Promise<string> {
-    if (!isTauri) throw new Error("Choose an image from the installed Papyrus app.");
+    if (!isTauri) throw new Error("Choose an image from the installed Pad app.");
     return invoke<string>("embed_image", { path });
   },
   async getSetting(key: string): Promise<string | null> {

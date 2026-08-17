@@ -24,7 +24,7 @@ const PRIVACY_ID = "bd76f343-f45d-4402-be68-ae511a1e9784";
 export const welcomeNotes: { id: string; body: string }[] = [
   {
     id: WELCOME_ID,
-    body: `# Welcome to Papyrus
+    body: `# Welcome to Pad
 
 A quiet place for every thought. These three notes are a short tour of what's here. They're ordinary notes — edit them, file them, or send them to Trash when you're done.
 
@@ -36,12 +36,12 @@ A quiet place for every thought. These three notes are a short tour of what's he
 
 ## Try it now
 
-- [ ] Tick this box — it's a real \`- [ ] \` in the Markdown underneath
+- [ ] Tick this box — it's a real \`- [ ]\` in the Markdown underneath
 - [ ] Press ⌘N for a new note, ⌘K to search
 - [ ] Right-click this page for headings, lists, links, and images
 - [ ] Open Settings and try one of these seven themes
 
-![The seven Papyrus themes: Papyrus, Mist, Graphite, Nord, Solarized, Dracula, and Gruvbox](${themeSwatchesImage})
+![The seven Pad themes: Pad, Mist, Graphite, Nord, Solarized, Dracula, and Gruvbox](${themeSwatchesImage})
 
 That strip is an image living *inside this note*, not a file sitting next to it. Every image you paste, drop, or add is embedded as a data URL, so a note stays one self-contained piece of Markdown — it syncs, exports, and travels in one piece.
 `,
@@ -89,7 +89,7 @@ Deleted notes rest in **Trash** for 30 days before they go for good.
     id: PRIVACY_ID,
     body: `# Your notes, your keys
 
-Papyrus is local-first by conviction, not by marketing.
+Pad is local-first by conviction, not by marketing.
 
 ## What that means in practice
 
@@ -101,7 +101,7 @@ Papyrus is local-first by conviction, not by marketing.
 
 Settings → **Sync** shows a QR code. Scan it from your other device and the two exchange keys directly; the relay just carries sealed envelopes between them.
 
-When the same note changes in two places at once, nothing is overwritten. Papyrus shows you both versions and asks: **Keep Current**, **Keep Other**, or **Keep Both**.
+When the same note changes in two places at once, nothing is overwritten. Pad shows you both versions and asks: **Keep Current**, **Keep Other**, or **Keep Both**.
 
 ## Leaving, whenever you like
 

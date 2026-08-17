@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Papyrus — build the current checkout and install it on this Mac and on any
+# Pad — build the current checkout and install it on this Mac and on any
 # connected Android phone.
 #
 #   ./scripts/deploy-local.sh            # both
@@ -22,6 +22,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 ANDROID_ABI="${ANDROID_ABI:-aarch64}"
+# Legacy path/alias preserve the existing Android signing identity.
 KEYSTORE="$HOME/.papyrus/android-release.jks"
 KEYSTORE_PASS_FILE="$HOME/.papyrus/android-release.pass"
 KEY_ALIAS="papyrus"
@@ -37,19 +38,18 @@ esac
 
 # ── macOS ─────────────────────────────────────────────────────────────────────
 deploy_mac() {
-  bold "Building Papyrus.app (release)"
+  bold "Building Pad.app (release)"
   npx tauri build --bundles app
 
-  local built="src-tauri/target/release/bundle/macos/Papyrus.app"
+  local built="src-tauri/target/release/bundle/macos/Pad.app"
   [ -d "$built" ] || die "expected bundle at $built"
 
   # Quit a running copy so we're not swapping the bundle out from under it.
-  # The user-facing app is named Papyrus, but the bundled executable is
-  # lowercase `papyrus`. Match the actual process so an update never replaces
-  # the bundle under a still-running WebView (which can leave it blank).
+  # The user-facing app is Pad, but the bundled executable deliberately keeps the
+  # legacy lowercase `papyrus` name for build/tooling compatibility.
   if pgrep -x papyrus >/dev/null 2>&1; then
-    bold "Quitting the running Papyrus"
-    osascript -e 'tell application "Papyrus" to quit' >/dev/null 2>&1 || true
+    bold "Quitting the running Pad"
+    osascript -e 'tell application "Pad" to quit' >/dev/null 2>&1 || true
     for _ in $(seq 1 20); do
       pgrep -x papyrus >/dev/null 2>&1 || break
       sleep 0.5
@@ -57,11 +57,11 @@ deploy_mac() {
     pgrep -x papyrus >/dev/null 2>&1 && pkill -x papyrus || true
   fi
 
-  bold "Installing to /Applications/Papyrus.app"
-  rm -rf "/Applications/Papyrus.app"
-  ditto "$built" "/Applications/Papyrus.app"
-  xattr -dr com.apple.quarantine "/Applications/Papyrus.app" 2>/dev/null || true
-  echo "   installed $(defaults read /Applications/Papyrus.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo '?')"
+  bold "Installing to /Applications/Pad.app"
+  rm -rf "/Applications/Pad.app"
+  ditto "$built" "/Applications/Pad.app"
+  xattr -dr com.apple.quarantine "/Applications/Pad.app" 2>/dev/null || true
+  echo "   installed $(defaults read /Applications/Pad.app/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || echo '?')"
 }
 
 # ── Android ───────────────────────────────────────────────────────────────────
@@ -108,8 +108,8 @@ ensure_keystore() {
     -keystore "$KEYSTORE" -storepass:file "$KEYSTORE_PASS_FILE" \
     -keypass:file "$KEYSTORE_PASS_FILE" \
     -alias "$KEY_ALIAS" -keyalg RSA -keysize 4096 -validity 10950 \
-    -dname "CN=Papyrus, OU=Local Build, O=Papyrus, C=US" >/dev/null
-  warn "Back up $KEYSTORE — without it you cannot update an installed Papyrus in place."
+    -dname "CN=Pad, OU=Local Build, O=Pad, C=US" >/dev/null
+  warn "Back up $KEYSTORE — without it you cannot update an installed Pad in place."
 }
 
 # Physical devices only unless INCLUDE_EMULATORS=1, de-duplicated by hardware
@@ -138,6 +138,7 @@ deploy_android() {
   # that matters: it is hand-edited (ndk-context init for the keyring, window
   # inset publishing), and `tauri android init` overwrites it with boilerplate
   # that crashes on launch. Fail loudly rather than silently shipping that.
+  # The com/papyrus/notes namespace is a retained application-identity path.
   local missing=""
   for f in \
     src-tauri/gen/android/app/src/main/java/com/papyrus/notes/MainActivity.kt \

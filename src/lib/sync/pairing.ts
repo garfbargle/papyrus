@@ -1,4 +1,4 @@
-// Device pairing — a port of start/accept/complete/finish_pairing in
+// Pad device pairing — a port of start/accept/complete/finish_pairing in
 // `src-tauri/src/lib.rs`. Two roles:
 //   - HOST (owns the vault): `hostStartPairing` emits a code; `hostCompletePairing`
 //     polls until the guest appears, authorizes it, and seals a snapshot.
@@ -38,6 +38,7 @@ import {
   type ReplayCounts,
 } from "./store.js";
 
+// Wire-format compatibility prefix. Do not rename without a protocol migration.
 const CODE_PREFIX = "papyrus-pair-v1:";
 const PAIRING_LIFETIME_MS = 5 * 60 * 1000;
 
@@ -68,7 +69,7 @@ export function decodePairingCode(raw: string): PairingCode {
   } catch {
     throw new Error("That pairing code is not valid.");
   }
-  if (code.version !== 1) throw new Error("That pairing code is from a newer version of Papyrus.");
+  if (code.version !== 1) throw new Error("That pairing code is from a newer version of Pad.");
   if (Date.parse(code.expiresAt) <= Date.now()) throw new Error("That pairing code has expired.");
   return code;
 }
