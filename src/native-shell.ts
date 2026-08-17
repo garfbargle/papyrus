@@ -17,8 +17,8 @@ function syncSystemBars() {
 }
 
 function installNativeShare() {
-  const shareText = window.PadNative?.shareText;
-  if (!shareText || navigator.share) return;
+  const bridge = window.PadNative;
+  if (!bridge?.shareText || navigator.share) return;
 
   // Android WebView does not expose the Web Share API to Tauri. Provide the
   // same browser-facing contract so the existing Share button opens the real
@@ -29,7 +29,7 @@ function installNativeShare() {
       if (data.files?.length) {
         throw new DOMException("File sharing is not supported by Pad yet.", "NotSupportedError");
       }
-      shareText(data.title || "Pad note", data.text || "");
+      bridge.shareText?.(data.title || "Pad note", data.text || "");
     },
   });
 }
