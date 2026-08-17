@@ -1,10 +1,13 @@
 package com.papyrus.notes
 
+import android.content.Intent
 import android.os.Bundle
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import io.crates.keyring.Keyring
 
 class MainActivity : TauriActivity() {
@@ -15,6 +18,37 @@ class MainActivity : TauriActivity() {
     Keyring.initializeNdkContext(applicationContext)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+
+    // Pad starts in a light notebook theme. The frontend updates this immediately
+    // after loading a saved dark theme so the system icons always contrast with
+    // the material drawn behind the edge-to-edge status/navigation bars.
+    setLightSystemBars(true)
+  }
+
+  private fun setLightSystemBars(light: Boolean) {
+    WindowInsetsControllerCompat(window, window.decorView).apply {
+      isAppearanceLightStatusBars = light
+      isAppearanceLightNavigationBars = light
+    }
+  }
+
+  private inner class PadNativeBridge {
+    @JavascriptInterface
+    fun shareText(title: String, text: String) {
+      runOnUiThread {
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+          type = "text/plain"
+          putExtra(Intent.EXTRA_SUBJECT, title)
+          putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(shareIntent, null))
+      }
+    }
+
+    @JavascriptInterface
+    fun setSystemBarsLight(light: Boolean) {
+      runOnUiThread { this@MainActivity.setLightSystemBars(light) }
+    }
   }
 
   // Called by wry once the WebView exists. We draw edge-to-edge (content behind
@@ -26,6 +60,10 @@ class MainActivity : TauriActivity() {
   // real WindowInsets natively and publish them as CSS variables the stylesheet
   // consumes (--sait/--sair/--saib/--sail), falling back to env() elsewhere.
   override fun onWebViewCreate(webView: WebView) {
+    // Keep this bridge intentionally narrow: it exposes only OS presentation
+    // affordances needed by Pad's own bundled UI, never notebook storage or keys.
+    webView.addJavascriptInterface(PadNativeBridge(), "PadNative")
+
     ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
       val bars = insets.getInsets(
         WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
