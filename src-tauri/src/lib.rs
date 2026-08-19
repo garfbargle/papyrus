@@ -24,6 +24,29 @@ type Result<T> = std::result::Result<T, String>;
 struct AppState {
     db: Mutex<Connection>,
     identity: Mutex<sync::SyncIdentity>,
+    // Serializes the relay-touching commands. See `sync_gate`.
+    relay: Mutex<()>,
+}
+
+// Everything that talks to the relay blocks: `reqwest::blocking` with a 30s
+// timeout, one round trip per uploaded package and one per acknowledgement. A
+// `#[tauri::command]` without `async` runs on the *main* thread, so those
+// commands froze the UI (a spinning cursor) for as long as the network took —
+// every 60s from the foreground poll, on every window focus, and every 2.2s
+// while the pairing sheet polled. They are now `#[tauri::command(async)]`,
+// which runs the same synchronous body on Tauri's blocking thread pool.
+//
+// Off the main thread they can overlap, which the old accidental
+// main-thread serialization prevented: the foreground poll, the post-edit
+// debounce, and the manual "Sync Now" button all drain the same outbox. This
+// gate keeps exactly one of them running at a time.
+fn sync_gate(state: &AppState) -> std::sync::MutexGuard<'_, ()> {
+    // The gate guards no data, so a panic in one cycle must not wedge sync
+    // permanently — take the lock back rather than propagating the poison.
+    state
+        .relay
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -586,7 +609,7 @@ fn find_note(connection: &Connection, id: &str) -> Result<Option<Note>> {
     ).optional().map_err(error)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn initialize_database(state: State<'_, AppState>) -> Result<()> {
     let connection = state
         .db
@@ -1344,7 +1367,7 @@ fn safe_component(input: &str, fallback: &str) -> String {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn embed_image(path: String) -> Result<String> {
     let source = PathBuf::from(&path);
     let extension = source
@@ -1845,7 +1868,7 @@ fn decode_pairing_code(value: &str) -> Result<PairingCode> {
     let encoded = value
         .trim()
         .strip_prefix("papyrus-pair-v1:")
-        .ok_or_else(|| "This is not a Papyrus pairing code.".to_string())?;
+        .ok_or_else(|| "This is not a Pad pairing code.".to_string())?;
     let bytes = URL_SAFE_NO_PAD
         .decode(encoded)
         .map_err(|_| "This pairing code is invalid.".to_string())?;
@@ -2095,7 +2118,7 @@ fn import_snapshot(
     relay_url: &str,
 ) -> Result<ReplayCounts> {
     if snapshot.version != 1 {
-        return Err("This notebook snapshot uses a newer Papyrus version.".into());
+        return Err("This notebook snapshot uses a newer Pad version.".into());
     }
     let vault_key: [u8; 32] = URL_SAFE_NO_PAD
         .decode(&snapshot.vault_key)
@@ -2733,8 +2756,9 @@ fn get_sync_status(state: State<'_, AppState>) -> Result<SyncStatus> {
     sync_status(&connection, &identity)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn sync_now(state: State<'_, AppState>) -> Result<SyncStatus> {
+    let _gate = sync_gate(&state);
     // Packages are deliberately sent in bounded pages. A foreground sync must
     // nevertheless drain those pages before claiming the notebook is current.
     // Stop if a retryable failure leaves the outbox unchanged, and keep a hard
@@ -2780,8 +2804,9 @@ fn rename_sync_device(name: String, state: State<'_, AppState>) -> Result<SyncSt
     sync_status(&connection, &identity)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn remove_sync_device(device_id: String, state: State<'_, AppState>) -> Result<SyncStatus> {
+    let _gate = sync_gate(&state);
     let old_identity = state
         .identity
         .lock()
@@ -2811,7 +2836,7 @@ fn remove_sync_device(device_id: String, state: State<'_, AppState>) -> Result<S
         }
         configured_relay(&connection)?
     }
-    .ok_or_else(|| "Papyrus Sync is not configured in this build.".to_string())?;
+    .ok_or_else(|| "Pad sync is not configured in this build.".to_string())?;
     let _: serde_json::Value = RelayTransport::new(&relay_url)?.post(
         &old_identity,
         "/v1/devices/revoke",
@@ -2892,8 +2917,9 @@ fn remove_sync_device(device_id: String, state: State<'_, AppState>) -> Result<S
     sync_status(&connection, &rotated_identity)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn start_pairing(state: State<'_, AppState>) -> Result<PairingOffer> {
+    let _gate = sync_gate(&state);
     let identity = state
         .identity
         .lock()
@@ -2907,7 +2933,7 @@ fn start_pairing(state: State<'_, AppState>) -> Result<PairingOffer> {
         configured_relay(&connection)?
     }
     .ok_or_else(|| {
-        "Papyrus Sync needs a relay URL in this build before devices can be paired.".to_string()
+        "Pad sync needs a relay URL in this build before devices can be paired.".to_string()
     })?;
     let session_id = make_id();
     let secret_bytes = sync::random_bytes(32);
@@ -2936,8 +2962,9 @@ fn start_pairing(state: State<'_, AppState>) -> Result<PairingOffer> {
     Ok(PairingOffer { code, expires_at })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn accept_pairing(code: String, state: State<'_, AppState>) -> Result<PairingProgress> {
+    let _gate = sync_gate(&state);
     let pairing = decode_pairing_code(&code)?;
     let identity = state
         .identity
@@ -2966,8 +2993,9 @@ fn accept_pairing(code: String, state: State<'_, AppState>) -> Result<PairingPro
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn complete_pairing(code: String, state: State<'_, AppState>) -> Result<PairingProgress> {
+    let _gate = sync_gate(&state);
     let pairing = decode_pairing_code(&code)?;
     let identity = state
         .identity
@@ -3101,8 +3129,9 @@ fn complete_pairing(code: String, state: State<'_, AppState>) -> Result<PairingP
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn finish_pairing(code: String, state: State<'_, AppState>) -> Result<PairingProgress> {
+    let _gate = sync_gate(&state);
     let pairing = decode_pairing_code(&code)?;
     let current_identity = state
         .identity
@@ -3162,7 +3191,7 @@ fn paired_message(merged: ReplayCounts) -> String {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_notebook(destination: String, state: State<'_, AppState>) -> Result<()> {
     let connection = state
         .db
@@ -3223,6 +3252,7 @@ pub fn run() {
             app.manage(AppState {
                 db: Mutex::new(connection),
                 identity: Mutex::new(identity),
+                relay: Mutex::new(()),
             });
             Ok(())
         })
@@ -3258,7 +3288,7 @@ pub fn run() {
             finish_pairing
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Papyrus");
+        .expect("error while running Pad");
 }
 
 #[cfg(test)]
