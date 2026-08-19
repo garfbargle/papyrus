@@ -45,8 +45,9 @@ deploy_mac() {
   [ -d "$built" ] || die "expected bundle at $built"
 
   # Quit a running copy so we're not swapping the bundle out from under it.
-  # The user-facing app is Pad, but the bundled executable deliberately keeps the
-  # legacy lowercase `papyrus` name for build/tooling compatibility.
+  # The user-facing app is named Pad, but the bundled executable is
+  # lowercase `papyrus`. Match the actual process so an update never replaces
+  # the bundle under a still-running WebView (which can leave it blank).
   if pgrep -x papyrus >/dev/null 2>&1; then
     bold "Quitting the running Pad"
     osascript -e 'tell application "Pad" to quit' >/dev/null 2>&1 || true

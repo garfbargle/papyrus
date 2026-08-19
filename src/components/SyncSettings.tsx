@@ -167,7 +167,7 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
     <section className="sync-section settings-card-section">
       <div className="settings-section-heading">
         <span className="settings-icon"><Icon name="share" size={18} /></span>
-        <div><strong>Sync</strong><span>Private, end-to-end encrypted device sync.</span></div>
+        <div><strong>Everywhere</strong><span>Pick up on your phone, desktop, web, or any paired device.</span></div>
       </div>
       <div className="sync-overview">
         <div className={`sync-state ${statusClass}`}><i /><span>{syncLabel}</span></div>
@@ -190,11 +190,11 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
           <div><strong>{device.displayName}</strong><span>{device.isCurrentDevice ? "This device" : device.lastSeenAt ? `Seen ${relativeTime(device.lastSeenAt)}` : "Paired device"}</span></div>
           {!device.isCurrentDevice && <button className="remove-device" onClick={() => setRevoke(device)}>Remove</button>}
         </div>)}
-        {pairedDevices.length === 0 && <div className="empty-devices"><span>Your notes are local to this device. Add another device to turn on sync.</span></div>}
+        {pairedDevices.length === 0 && <div className="empty-devices"><span>Your notes are local to this device. Add another device to keep them together.</span></div>}
       </div>
 
       <div className="pair-actions">
-        <button className="primary-button" disabled={busy} onClick={() => void startHostPairing()}><Icon name="plus" size={17} />Add Device</button>
+        <button className="primary-button" disabled={busy} onClick={() => void startHostPairing()}><Icon name="plus" size={17} />Add a Device</button>
         <button className="secondary-button" disabled={busy} onClick={() => setPairView("join")}><Icon name="link" size={17} />Pair Existing Notebook</button>
       </div>
     </section>
@@ -216,7 +216,7 @@ export default function SyncSettings({ status, onStatusChange, onNotebookChanged
           <p className="pair-merge-note">Nothing is replaced: the notes already on this device join that notebook, and sync out to its other devices.</p>
           <button className="scan-button" disabled={busy} onClick={() => void scanCode()}><span className="scan-corners"><i /><i /><i /><i /></span><strong>Scan QR code</strong><small>Uses your camera only for this scan</small></button>
           <div className="pair-divider"><span>or paste the code</span></div>
-          <textarea className="pair-code-input" rows={3} value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Paste pairing code…" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+          <textarea className="pair-code-input" rows={3} value={joinCode} onChange={(event) => setJoinCode(event.target.value)} placeholder="Paste your Pad pairing code" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
           <button className="primary-button wide pair-continue" disabled={busy || !joinCode.trim()} onClick={() => void submitJoin()}>{busy ? "Connecting…" : "Continue"}</button>
         </>}
         {pairView === "waiting" && <div className="pair-waiting">

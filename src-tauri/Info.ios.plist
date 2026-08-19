@@ -3,6 +3,6 @@
 <plist version="1.0">
   <dict>
     <key>NSCameraUsageDescription</key>
-    <string>Scan a one-time Papyrus code to pair this device with your notebook.</string>
+    <string>Scan a one-time Pad code to keep your notebook in sync across your devices.</string>
   </dict>
 </plist>

@@ -30,6 +30,6 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(8787, "127.0.0.1", () => console.log(`Papyrus fault harness on http://127.0.0.1:8787 (${Array.from(modes).join(", ") || "no faults"})`));
+server.listen(8787, "127.0.0.1", () => console.log(`Pad fault harness on http://127.0.0.1:8787 (${Array.from(modes).join(", ") || "no faults"})`));
 const close = () => { server.close(); worker.kill("SIGTERM"); };
 process.on("SIGINT", close); process.on("SIGTERM", close); worker.on("exit", () => server.close());

@@ -623,7 +623,7 @@ function App() {
         </div>
 
         <div className="rail-footer">
-          {syncStatus && <button className="sidebar-sync" onClick={() => setSettingsOpen(true)} aria-label={`Sync: ${sidebarSyncLabel}`}><i className={syncStatus.status.toLowerCase().replaceAll(" ", "-")} /><span>{sidebarSyncLabel}</span>{syncStatus.pendingOutgoingChanges > 0 && <b title={`${syncStatus.pendingOutgoingChanges} changes ready to upload`}>{syncStatus.pendingOutgoingChanges}</b>}</button>}
+          {syncStatus && <button className="sidebar-sync" onClick={() => setSettingsOpen(true)} aria-label={`Everywhere: ${sidebarSyncLabel}`}><i className={syncStatus.status.toLowerCase().replaceAll(" ", "-")} /><span>{sidebarSyncLabel}</span>{syncStatus.pendingOutgoingChanges > 0 && <b title={`${syncStatus.pendingOutgoingChanges} changes ready to upload`}>{syncStatus.pendingOutgoingChanges}</b>}</button>}
           <button className={view === "trash" ? "nav-item active" : "nav-item"} onClick={openTrash}><Icon name="trash" />Trash</button>
           <button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="sun" />Settings</button>
         </div>
@@ -725,7 +725,7 @@ function Settings({ onClose, onExport, theme, onThemeChange, font, onFontChange,
   return <div className="settings-overlay" role="dialog" aria-modal="true" aria-label="Settings">
     <div className="settings-topbar"><button className="icon-button" onClick={onClose} aria-label="Close settings"><Icon name="arrowLeft" /></button><strong>Settings</strong></div>
     <div className="settings-scroll"><div className="settings">
-      <header><span className="eyebrow">Notebook</span><h1>Settings</h1><p>Your notes stay local-first, readable, and yours—now with private sync when you want it.</p></header>
+      <header><span className="eyebrow">Notebook</span><h1>Settings</h1><p>Your notes stay local-first, readable, and yours—ready on your phone, desktop, and web browser when you pair them.</p></header>
       <SyncSettings status={syncStatus} onStatusChange={onSyncStatusChange} onNotebookChanged={onNotebookChanged} onNotice={onNotice} />
       <section className="theme-section"><div><strong>Editor appearance</strong><span>Choose a comfortable colour palette for writing.</span></div><div className="theme-grid" role="group" aria-label="Editor appearance">{themes.map((option) => <button className={theme === option.id ? "theme-card selected" : "theme-card"} key={option.id} onClick={() => onThemeChange(option.id)} aria-pressed={theme === option.id}><span className="theme-preview" style={{ background: option.colors[0] }}><i style={{ background: option.colors[1] }} /><b style={{ background: option.colors[2] }} /></span><span><strong>{option.name}</strong><small>{option.description}</small></span>{theme === option.id && <Icon name="check" size={15} />}</button>)}</div></section>
       <section className="font-section"><div><strong>Writing font</strong><span>Use a clean sans serif throughout your notebook.</span></div><div className="font-options" role="group" aria-label="Writing font">{fonts.map((option) => <button className={font === option.id ? "font-option selected" : "font-option"} key={option.id} onClick={() => onFontChange(option.id)} aria-pressed={font === option.id}><span>{option.name}</span><small>{option.description}</small>{font === option.id && <Icon name="check" size={14} />}</button>)}</div></section>

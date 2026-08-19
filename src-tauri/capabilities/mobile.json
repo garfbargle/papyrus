@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "mobile-capability",
-  "description": "Mobile permissions for pairing Papyrus devices",
+  "description": "Mobile permissions for pairing Pad devices",
   "windows": ["main"],
   "platforms": ["iOS", "android"],
   "permissions": ["core:default", "dialog:default", "barcode-scanner:default"]

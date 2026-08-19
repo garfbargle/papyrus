@@ -18,6 +18,7 @@ use zeroize::Zeroize;
 
 pub type SyncResult<T> = std::result::Result<T, String>;
 
+#[cfg_attr(test, allow(dead_code))]
 const SECRET_SERVICE: &str = "com.papyrus.notes.sync";
 const PROTOCOL_VERSION: u8 = 1;
 
@@ -191,7 +192,7 @@ fn platform_device_name() -> String {
         "linux" => "Linux device",
         "android" => "Android phone",
         "ios" => "iPhone",
-        _ => "Papyrus device",
+        _ => "Pad device",
     }
     .to_string()
 }
@@ -200,7 +201,7 @@ fn secret_name(vault_id: &str) -> String {
     format!("vault-{vault_id}")
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(not(any(target_os = "android", target_os = "ios")), not(test)))]
 fn get_secret(name: &str) -> SyncResult<Option<Vec<u8>>> {
     let entry = keyring::Entry::new(SECRET_SERVICE, name).map_err(|error| error.to_string())?;
     match entry.get_secret() {
@@ -210,7 +211,7 @@ fn get_secret(name: &str) -> SyncResult<Option<Vec<u8>>> {
     }
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(all(not(any(target_os = "android", target_os = "ios")), not(test)))]
 fn put_secret(name: &str, value: &[u8]) -> SyncResult<()> {
     let entry = keyring::Entry::new(SECRET_SERVICE, name).map_err(|error| error.to_string())?;
     entry
@@ -244,7 +245,7 @@ fn setup_mobile_secure_store() -> SyncResult<()> {
         .clone()
 }
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(all(any(target_os = "android", target_os = "ios"), not(test)))]
 fn get_secret(name: &str) -> SyncResult<Option<Vec<u8>>> {
     setup_mobile_secure_store()?;
     let entry =
@@ -256,7 +257,7 @@ fn get_secret(name: &str) -> SyncResult<Option<Vec<u8>>> {
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "ios"))]
+#[cfg(all(any(target_os = "android", target_os = "ios"), not(test)))]
 fn put_secret(name: &str, value: &[u8]) -> SyncResult<()> {
     setup_mobile_secure_store()?;
     let entry =
@@ -264,6 +265,37 @@ fn put_secret(name: &str, value: &[u8]) -> SyncResult<()> {
     entry
         .set_secret(value)
         .map_err(|error| format!("Could not save sync keys securely: {error}"))
+}
+
+// Under `cargo test` the secret store is a plain in-process map. The real
+// implementations above write to the developer's OS keychain — on macOS that
+// meant every `cargo test` run popped an authorization prompt (a fresh unsigned
+// test binary each build) and left a `vault-vault-host` item sitting next to the
+// user's actual vault key. A unit test has no business touching the login
+// keychain, and asserting on identity persistence does not require it.
+#[cfg(test)]
+fn test_secrets() -> &'static std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>> {
+    static SECRETS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>> =
+        std::sync::OnceLock::new();
+    SECRETS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+#[cfg(test)]
+fn get_secret(name: &str) -> SyncResult<Option<Vec<u8>>> {
+    Ok(test_secrets()
+        .lock()
+        .map_err(|_| "Secure storage is unavailable.".to_string())?
+        .get(name)
+        .cloned())
+}
+
+#[cfg(test)]
+fn put_secret(name: &str, value: &[u8]) -> SyncResult<()> {
+    test_secrets()
+        .lock()
+        .map_err(|_| "Could not save sync keys securely.".to_string())?
+        .insert(name.to_string(), value.to_vec());
+    Ok(())
 }
 
 fn read_stored_identity(vault_id: &str) -> SyncResult<Option<StoredIdentity>> {

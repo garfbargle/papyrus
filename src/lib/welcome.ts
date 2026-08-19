@@ -26,19 +26,20 @@ export const welcomeNotes: { id: string; body: string }[] = [
     id: WELCOME_ID,
     body: `# Welcome to Pad
 
-A quiet place for every thought. These three notes are a short tour of what's here. They're ordinary notes — edit them, file them, or send them to Trash when you're done.
+Write something on your phone, pick it up on your desktop or on the web. Pad is a quiet place for every thought, with your notebook ready on the devices you choose. These three notes are a short tour of what's here. They're ordinary notes — edit them, file them, or send them to Trash when you're done.
 
 ## The short version
 
 - Everything you write lives in a **local database on this device**. Editing never waits for the network, and there is no account to make.
 - Notes are **plain Markdown**. Type \`## \` or \`- [ ] \` and it becomes one as you go.
-- **Sync is optional and end-to-end encrypted.** Pair a second device with a QR code from Settings.
+- **Sync is optional and end-to-end encrypted.** Pair your phone, desktop, or web browser with a QR code from Settings, then keep writing wherever you are.
 
 ## Try it now
 
 - [ ] Tick this box — it's a real \`- [ ]\` in the Markdown underneath
 - [ ] Press ⌘N for a new note, ⌘K to search
 - [ ] Right-click this page for headings, lists, links, and images
+- [ ] Open Settings → Everywhere and add your other device
 - [ ] Open Settings and try one of these seven themes
 
 ![The seven Pad themes: Pad, Mist, Graphite, Nord, Solarized, Dracula, and Gruvbox](${themeSwatchesImage})
@@ -87,9 +88,9 @@ Deleted notes rest in **Trash** for 30 days before they go for good.
   },
   {
     id: PRIVACY_ID,
-    body: `# Your notes, your keys
+    body: `# Your notes, everywhere
 
-Pad is local-first by conviction, not by marketing.
+Pad is local-first by conviction, not by marketing. Your notebook is always on the device in front of you—and, when you choose, securely available on your phone, desktop, and web browser too.
 
 ## What that means in practice
 
@@ -97,9 +98,9 @@ Pad is local-first by conviction, not by marketing.
 - Notes are encrypted **on this device** before anything touches the network.
 - Private keys live in your OS keychain. The sync relay only ever sees ciphertext and routing ids — not your note titles, not your folder names, not a thing.
 
-## Turning on sync
+## Move between devices, not notebooks
 
-Settings → **Sync** shows a QR code. Scan it from your other device and the two exchange keys directly; the relay just carries sealed envelopes between them.
+On your first device, open Settings → **Everywhere** and choose **Add a Device**. Scan the QR code from your other device and the two exchange keys directly; the relay just carries sealed envelopes between them. After that, Pad sends changes in the background, so the note you started on your phone is there on your desktop and on the web.
 
 When the same note changes in two places at once, nothing is overwritten. Pad shows you both versions and asks: **Keep Current**, **Keep Other**, or **Keep Both**.
 

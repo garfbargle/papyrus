@@ -2,10 +2,10 @@
 
 # ✦ Pad
 
-### A quiet place for every thought.
+### Start anywhere. Pick up everywhere.
 
-**Local-first Markdown notes that stay private, portable, and yours.**
-Runs everywhere. Syncs end-to-end encrypted. Never waits on the network.
+**A local-first Markdown notebook that follows you between your devices.**
+Private, end-to-end encrypted, and instant whether you are online or not.
 
 [![Made with Tauri 2](https://img.shields.io/badge/built_with-Tauri_2-9d6d38?style=flat-square&labelColor=3f3626)](https://tauri.app)
 [![React 19](https://img.shields.io/badge/React-19-9d6d38?style=flat-square&labelColor=3f3626)](https://react.dev)
@@ -19,13 +19,13 @@ Runs everywhere. Syncs end-to-end encrypted. Never waits on the network.
 
 ## The pitch
 
-Most notes apps want to become your operating system. Pad just wants to hold your thoughts and then get out of the way.
+Most notes apps want to become your operating system. Pad just wants to keep your notebook with you.
 
-It's a **paper-first** Markdown notebook. You type `## Heading` or `- [ ] Task` and it quietly becomes one — no toolbars to hunt, no blocks to summon. Every note is canonical Markdown living in a **local SQLite database on your own device**, so editing is instant, search is instant, and nothing you write is ever hostage to a spinner.
+Write a grocery list on your phone, then open it on your desktop or on the web. Start a meeting note at your desk and finish it on the couch. Pad keeps a complete local notebook on every paired device, so editing and search are instant and nothing waits for the network.
 
-When you *want* your notes on another device, sync is **end-to-end encrypted** and pairs with a QR code. The relay that shuttles your data between devices is deliberately, structurally clueless — it sees ciphertext and routing IDs and nothing else. Not your note titles. Not your folder names. Not a thing.
+It is a **paper-first** Markdown notebook: type `## Heading` or `- [ ] Task` and it quietly becomes one—no toolbars to hunt or blocks to summon. Pair a second device with a QR code and Pad syncs in the background with **end-to-end encryption**. The relay only sees ciphertext and routing IDs, never your notes or folder names.
 
-> *"A quiet place for every thought."* — the empty state, being completely sincere
+> *"Your notes, where you are."*
 
 ---
 
@@ -39,14 +39,14 @@ When you *want* your notes on another device, sync is **end-to-end encrypted** a
 - **🖼️ Inline images** — PNG, JPEG, GIF, WebP up to 4 MB, embedded as portable data URLs. Your Markdown stays a single self-contained file.
 - **📦 Whole-notebook export** — one ZIP, organized by folder, readable Markdown with YAML metadata. Your notes can always walk out the front door.
 - **🗑️ 30-day Trash** — restore, permanent delete, or empty. Mistakes get a grace period.
-- **🎨 7 themes, 3 fonts** — Pad (warm parchment with paper-fiber grain), Mist, Graphite, Nord, Solarized, Dracula, Gruvbox.
-- **🔐 End-to-end encrypted sync** — QR pairing, immutable revisions, conflict review that never overwrites (Keep Current / Keep Other / Keep Both), device revocation.
-- **📴 Offline-first, always** — autosave, background sync every couple minutes and on focus, but editing never waits for a network round-trip.
-- **📱 Genuinely cross-platform** — macOS, Windows, Linux, native iOS and Android, plus the web at [notes.c0di.com](https://notes.c0di.com).
+- **🎨 7 themes, 3 fonts** — Pad (warm parchment with real paper-fiber grain), Mist, Graphite, Nord, Solarized, Dracula, Gruvbox.
+- **🔐 Sync everywhere** — QR pairing across phone, desktop, and web; end-to-end encryption; immutable revisions; conflict review that *never overwrites* (Keep Current / Keep Other / Keep Both); and device revocation.
+- **📴 Offline-first, always** — autosave, background sync every couple minutes and on focus, but editing never once waits for a network round-trip.
+- **📱 Genuinely cross-platform** — macOS, Windows, Linux, **native iOS and Android**, plus the web at [notes.c0di.com](https://notes.c0di.com).
 
 ---
 
-## 🔒 Your notes, your keys, nobody else's business
+## 🔒 Your notes, your keys, wherever you are
 
 Pad is local-first by conviction, not marketing.
 
@@ -120,6 +120,8 @@ See [`BRANDING.md`](BRANDING.md) before changing any remaining `papyrus` identif
 
 <div align="center">
 
-**Pad** — write it down, keep it yours.
+**Pad** — your notes, where you are.
+
+<sub>Write it once. Find it wherever you are.</sub>
 
 </div>
