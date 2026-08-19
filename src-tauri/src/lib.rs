@@ -2237,6 +2237,41 @@ fn pending_outbox(connection: &Connection) -> Result<Vec<PendingOutbox>> {
         .collect()
 }
 
+// `enqueue_operation` addresses a package to the devices authorized at the
+// moment it is written, so anything queued while this device was alone gets an
+// empty recipient list and `run_sync_cycle` parks it as `waiting_for_device`.
+// Nothing moved it back: `pending_outbox` selects only `state = 'pending'`, so
+// every change made before a second device was paired stayed queued forever
+// while the UI reported "Synced". Re-address those packages once the vault has
+// somewhere to send them. Mirrors `refreshWaitingRecipients` in
+// `src/lib/sync/store.ts`, which the web client has always had.
+fn refresh_waiting_recipients(connection: &Connection, self_device_id: &str) -> Result<()> {
+    let recipients: Vec<String> = connection
+        .prepare("SELECT d.id FROM devices d JOIN device_authorizations a ON a.device_id = d.id WHERE d.id != ?1 AND a.revoked_at IS NULL")
+        .map_err(error)?
+        .query_map([self_device_id], |row| row.get::<_, String>(0))
+        .map_err(error)?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(error)?;
+    // Still the only device: leave the packages parked rather than addressing
+    // them to nobody.
+    if recipients.is_empty() {
+        return Ok(());
+    }
+    let recipient_json = serde_json::to_string(&recipients).map_err(|error| error.to_string())?;
+    // A `pending` row with an empty recipient list is the same package one cycle
+    // earlier, before it was parked — catch both so a change made seconds before
+    // pairing is not left behind either.
+    connection
+        .execute(
+            "UPDATE sync_outbox SET recipients = ?1, state = 'pending', next_retry_at = ?2
+             WHERE state = 'waiting_for_device' OR (state = 'pending' AND recipients = '[]')",
+            params![recipient_json, now()],
+        )
+        .map_err(error)?;
+    Ok(())
+}
+
 fn mark_outbox_uploaded(connection: &Connection, id: &str) -> Result<()> {
     connection.execute("UPDATE sync_outbox SET state = 'uploaded', uploaded_at = ?2, last_error = NULL WHERE id = ?1", params![id, now()]).map_err(error)?;
     Ok(())
@@ -2578,6 +2613,7 @@ fn run_sync_cycle(state: &AppState) -> Result<SyncStatus> {
             .map_err(|_| "Notebook is busy".to_string())?;
         set_sync_state(&connection, "last_sync_error", "")?;
         set_sync_state(&connection, "more_inbound_packages", "0")?;
+        refresh_waiting_recipients(&connection, &identity.device_id)?;
     }
     let outgoing = {
         let connection = state
@@ -3778,6 +3814,60 @@ mod tests {
         apply_remote_category(&connection, &phone, &remote.device_id).unwrap();
         assert_eq!(connection.query_row("SELECT COUNT(*) FROM sync_conflicts WHERE entity_type = 'category' AND status = 'open'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
         assert!(category_revision_exists(&connection, "remote-cat").unwrap());
+    }
+
+    #[test]
+    fn a_package_queued_before_pairing_is_sent_once_a_device_exists() {
+        let connection = Connection::open_in_memory().unwrap();
+        migrate(&connection).unwrap();
+        let (local, remote) = identities();
+        // Only this device exists, so the package is addressed to nobody.
+        register(&connection, &local, true);
+        insert_local_note(
+            &connection,
+            &local,
+            &note_state("note", "rev", None, "# Written before pairing"),
+        );
+        let parked: usize = connection
+            .execute(
+                "UPDATE sync_outbox SET state = 'waiting_for_device' WHERE recipients = '[]'",
+                [],
+            )
+            .unwrap();
+        assert_eq!(parked, 1, "the lone-device package should have no recipients");
+        assert!(
+            pending_outbox(&connection).unwrap().is_empty(),
+            "a parked package is invisible to the uploader"
+        );
+
+        // Pair a second device; the parked package now has somewhere to go.
+        register(&connection, &remote, false);
+        refresh_waiting_recipients(&connection, &local.device_id).unwrap();
+
+        let pending = pending_outbox(&connection).unwrap();
+        assert_eq!(pending.len(), 1, "the package should be queued again");
+        assert_eq!(pending[0].recipients, vec![remote.device_id.clone()]);
+    }
+
+    #[test]
+    fn refreshing_recipients_alone_leaves_packages_parked() {
+        let connection = Connection::open_in_memory().unwrap();
+        migrate(&connection).unwrap();
+        let (local, _) = identities();
+        register(&connection, &local, true);
+        insert_local_note(&connection, &local, &note_state("note", "rev", None, "# Alone"));
+        connection
+            .execute(
+                "UPDATE sync_outbox SET state = 'waiting_for_device' WHERE recipients = '[]'",
+                [],
+            )
+            .unwrap();
+
+        refresh_waiting_recipients(&connection, &local.device_id).unwrap();
+
+        // Addressing a package to an empty recipient list would upload it to
+        // nobody and mark it sent, silently dropping the change.
+        assert!(pending_outbox(&connection).unwrap().is_empty());
     }
 
     #[test]
